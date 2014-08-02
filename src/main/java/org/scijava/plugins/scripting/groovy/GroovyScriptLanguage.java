@@ -68,11 +68,6 @@ public class GroovyScriptLanguage extends AbstractScriptLanguage {
 	}
 
 	@Override
-	public String getLanguageName() {
-		return "groovy";
-	}
-
-	@Override
 	public String getLanguageVersion() {
 		return VERSION;
 	}
