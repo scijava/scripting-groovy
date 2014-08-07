@@ -10,7 +10,7 @@
 	</parent>
 
 	<artifactId>scripting-groovy</artifactId>
-	<version>0.1.1-SNAPSHOT</version>
+	<version>0.1.1</version>
 
 	<name>SciJava Scripting: Groovy</name>
 	<description>JSR-223-compliant Groovy scripting language plugin.</description>
@@ -53,7 +53,7 @@
 	<scm>
 		<connection>scm:git:git://github.com/scijava/scripting-groovy</connection>
 		<developerConnection>scm:git:git@github.com:scijava/scripting-groovy</developerConnection>
-		<tag>HEAD</tag>
+		<tag>scripting-groovy-0.1.1</tag>
 		<url>https://github.com/scijava/scripting-groovy</url>
 	</scm>
 
