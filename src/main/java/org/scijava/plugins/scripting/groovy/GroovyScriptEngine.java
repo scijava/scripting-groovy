@@ -2,7 +2,7 @@
  * #%L
  * JSR-223-compliant Groovy scripting language plugin.
  * %%
- * Copyright (C) 2014 Board of Regents of the University of
+ * Copyright (C) 2014 - 2015 Board of Regents of the University of
  * Wisconsin-Madison.
  * %%
  * Redistribution and use in source and binary forms, with or without
