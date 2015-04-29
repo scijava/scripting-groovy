@@ -1,3 +1,5 @@
+![](http://jenkins.imagej.net/job/scripting-Groovy/lastBuild/badge/icon)
+
 # Groovy Scripting
 
 This library provides a
