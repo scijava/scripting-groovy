@@ -64,7 +64,7 @@
 
 	<ciManagement>
 		<system>Jenkins</system>
-		<url>https://jenkins.imagej.net/job/scripting-Groovy/</url>
+		<url>http://jenkins.imagej.net/job/scripting-Groovy/</url>
 	</ciManagement>
 
 	<dependencies>
