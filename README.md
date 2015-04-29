@@ -1,4 +1,4 @@
-![](http://jenkins.imagej.net/job/scripting-Groovy/lastBuild/badge/icon)
+[![](http://jenkins.imagej.net/job/scripting-Groovy/lastBuild/badge/icon)](http://jenkins.imagej.net/job/scripting-Groovy/)
 
 # Groovy Scripting
 
