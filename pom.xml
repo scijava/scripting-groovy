@@ -16,7 +16,6 @@
 	<description>JSR-223-compliant Groovy scripting language plugin.</description>
 	<url>http://scijava.org/</url>
 	<inceptionYear>2014</inceptionYear>
-
 	<licenses>
 		<license>
 			<name>Simplified BSD License</name>
@@ -56,12 +55,10 @@
 		<tag>HEAD</tag>
 		<url>https://github.com/scijava/scripting-groovy</url>
 	</scm>
-
 	<issueManagement>
 		<system>GitHub Issues</system>
 		<url>https://github.com/scijava/scripting-groovy/issues</url>
 	</issueManagement>
-
 	<ciManagement>
 		<system>Jenkins</system>
 		<url>http://jenkins.imagej.net/job/scripting-Groovy/</url>
@@ -118,5 +115,4 @@ Wisconsin-Madison.</organizationName>
 			</plugin>
 		</plugins>
 	</build>
-
 </project>
