@@ -38,6 +38,7 @@ import java.util.List;
 
 import javax.script.ScriptEngine;
 
+import org.scijava.Priority;
 import org.scijava.plugin.Plugin;
 import org.scijava.script.AbstractScriptLanguage;
 import org.scijava.script.ScriptLanguage;
@@ -50,7 +51,8 @@ import org.scijava.script.ScriptLanguage;
  * @author Curtis Rueden
  * @see ScriptEngine
  */
-@Plugin(type = ScriptLanguage.class, name = "Groovy")
+@Plugin(type = ScriptLanguage.class, name = "Groovy",
+	priority = Priority.HIGH_PRIORITY)
 public class GroovyScriptLanguage extends AbstractScriptLanguage {
 
 	private static String VERSION = "1.5.6";
