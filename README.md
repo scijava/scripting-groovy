@@ -1,4 +1,4 @@
-[![](http://jenkins.imagej.net/job/scripting-Groovy/lastBuild/badge/icon)](http://jenkins.imagej.net/job/scripting-Groovy/)
+[![](https://travis-ci.org/scijava/scripting-groovy.svg?branch=master)](https://travis-ci.org/scijava/scripting-groovy)
 
 # Groovy Scripting
 

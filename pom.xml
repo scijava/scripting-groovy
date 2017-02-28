@@ -80,8 +80,8 @@
 		<url>https://github.com/scijava/scripting-groovy/issues</url>
 	</issueManagement>
 	<ciManagement>
-		<system>Jenkins</system>
-		<url>http://jenkins.imagej.net/job/scripting-Groovy/</url>
+		<system>Travis CI</system>
+		<url>https://travis-ci.org/scijava/scripting-groovy</url>
 	</ciManagement>
 
 	<properties>
