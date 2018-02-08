@@ -95,6 +95,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 
 		<groovy.version>2.4.8</groovy.version>
 		<ivy.version>2.4.0</ivy.version>
+		<gpars.version>1.2.1</gpars.version>
 	</properties>
 
 	<dependencies>
@@ -115,6 +116,13 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<groupId>org.apache.ivy</groupId>
 			<artifactId>ivy</artifactId>
 			<version>${ivy.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<!-- NB: Useful for parallelization. -->
+			<groupId>org.codehaus.gpars</groupId>
+			<artifactId>gpars</artifactId>
+			<version>${gpars.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 
