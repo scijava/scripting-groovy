@@ -92,6 +92,9 @@ Wisconsin-Madison.</license.copyrightOwners>
 
 		<!-- NB: Deploy releases to the ImageJ Maven repository. -->
 		<releaseProfiles>deploy-to-imagej</releaseProfiles>
+
+		<groovy.version>2.4.8</groovy.version>
+		<ivy.version>2.2.0</ivy.version>
 	</properties>
 
 	<dependencies>
@@ -105,13 +108,13 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<dependency>
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy</artifactId>
-			<version>2.4.8</version>
+			<version>${groovy.version}</version>
 		</dependency>
 		<dependency>
 			<!-- NB: Needed for Groovy Grape. -->
 			<groupId>org.apache.ivy</groupId>
 			<artifactId>ivy</artifactId>
-			<version>2.2.0</version>
+			<version>${ivy.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 
