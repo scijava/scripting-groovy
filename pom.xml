@@ -94,7 +94,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<releaseProfiles>deploy-to-imagej</releaseProfiles>
 
 		<groovy.version>2.4.8</groovy.version>
-		<ivy.version>2.2.0</ivy.version>
+		<ivy.version>2.4.0</ivy.version>
 	</properties>
 
 	<dependencies>
