@@ -86,9 +86,11 @@
 
 	<properties>
 		<package-name>org.scijava.plugins.scripting.groovy</package-name>
+
 		<license.licenseName>bsd_2</license.licenseName>
 		<license.copyrightOwners>Board of Regents of the University of
 Wisconsin-Madison.</license.copyrightOwners>
+		<license.excludes>**/script_templates/**</license.excludes>
 
 		<!-- NB: Deploy releases to the ImageJ Maven repository. -->
 		<releaseProfiles>deploy-to-imagej</releaseProfiles>
