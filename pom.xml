@@ -96,6 +96,9 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<releaseProfiles>deploy-to-imagej</releaseProfiles>
 
 		<groovy.version>2.4.8</groovy.version>
+		<groovy-json.version>${groovy.version}</groovy-json.version>
+		<groovy-templates.version>${groovy.version}</groovy-templates.version>
+		<groovy-xml.version>${groovy.version}</groovy-xml.version>
 		<ivy.version>2.4.0</ivy.version>
 		<gpars.version>1.2.1</gpars.version>
 	</properties>
@@ -112,6 +115,27 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy</artifactId>
 			<version>${groovy.version}</version>
+		</dependency>
+		<dependency>
+			<!-- NB: Useful for JSON support. -->
+			<groupId>org.codehaus.groovy</groupId>
+			<artifactId>groovy-json</artifactId>
+			<version>${groovy-json.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<!-- NB: Useful for template support. -->
+			<groupId>org.codehaus.groovy</groupId>
+			<artifactId>groovy-templates</artifactId>
+			<version>${groovy-templates.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<!-- NB: Useful for XML support. -->
+			<groupId>org.codehaus.groovy</groupId>
+			<artifactId>groovy-xml</artifactId>
+			<version>${groovy-xml.version}</version>
+			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<!-- NB: Needed for Groovy Grape. -->
