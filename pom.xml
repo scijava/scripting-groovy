@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.scijava</groupId>
 		<artifactId>pom-scijava</artifactId>
-		<version>17.1.1</version>
+		<version>26.0.0</version>
 		<relativePath />
 	</parent>
 
@@ -92,8 +92,8 @@
 Wisconsin-Madison.</license.copyrightOwners>
 		<license.excludes>**/script_templates/**</license.excludes>
 
-		<!-- NB: Deploy releases to the ImageJ Maven repository. -->
-		<releaseProfiles>deploy-to-imagej</releaseProfiles>
+		<!-- NB: Deploy releases to the SciJava Maven repository. -->
+		<releaseProfiles>deploy-to-scijava</releaseProfiles>
 
 		<groovy.version>2.4.8</groovy.version>
 		<groovy-json.version>${groovy.version}</groovy-json.version>
