@@ -1,5 +1,5 @@
-// @String name
-// @OUTPUT String greeting
+#@ String name
+#@output String greeting
 
 // A Groovy script with parameters.
 // It is the duty of the scripting framework to harvest
