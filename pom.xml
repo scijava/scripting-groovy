@@ -10,7 +10,7 @@
 	</parent>
 
 	<artifactId>scripting-groovy</artifactId>
-	<version>0.2.9-SNAPSHOT</version>
+	<version>0.3.0-SNAPSHOT</version>
 
 	<name>SciJava Scripting: Groovy</name>
 	<description>JSR-223-compliant Groovy scripting language plugin.</description>
@@ -95,12 +95,13 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<!-- NB: Deploy releases to the SciJava Maven repository. -->
 		<releaseProfiles>deploy-to-scijava</releaseProfiles>
 
-		<groovy.version>2.4.8</groovy.version>
+		<groovy.version>2.5.1</groovy.version>
 		<groovy-json.version>${groovy.version}</groovy-json.version>
 		<groovy-templates.version>${groovy.version}</groovy-templates.version>
 		<groovy-xml.version>${groovy.version}</groovy-xml.version>
 		<ivy.version>2.4.0</ivy.version>
 		<gpars.version>1.2.1</gpars.version>
+		<groovy-swing.version>2.5.8</groovy-swing.version>
 	</properties>
 
 	<dependencies>
@@ -149,6 +150,13 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<groupId>org.codehaus.gpars</groupId>
 			<artifactId>gpars</artifactId>
 			<version>${gpars.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<!-- NB: Simple UI Building in scripts. -->
+			 <groupId>org.codehaus.groovy</groupId>
+  			<artifactId>groovy-swing</artifactId>
+			<version>${groovy-swing.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 
