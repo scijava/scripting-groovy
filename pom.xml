@@ -96,13 +96,13 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<releaseProfiles>deploy-to-scijava</releaseProfiles>
 
 		<groovy.version>2.5.8</groovy.version>
+		<groovy-dateutil.version>2.5.8</groovy-dateutil.version>
 		<groovy-json.version>${groovy.version}</groovy-json.version>
 		<groovy-templates.version>${groovy.version}</groovy-templates.version>
+		<groovy-swing.version>2.5.8</groovy-swing.version>
 		<groovy-xml.version>${groovy.version}</groovy-xml.version>
 		<ivy.version>2.4.0</ivy.version>
 		<gpars.version>1.2.1</gpars.version>
-		<groovy-swing.version>2.5.8</groovy-swing.version>
-		<groovy-dateutil.version>2.5.8</groovy-dateutil.version>
 	</properties>
 
 	<dependencies>
@@ -119,6 +119,13 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<version>${groovy.version}</version>
 		</dependency>
 		<dependency>
+			<!-- NB: As per Groovy 2.5 must be explicitely included. -->
+			<groupId>org.codehaus.groovy</groupId>
+			<artifactId>groovy-dateutil</artifactId>
+			<version>${groovy-dateutil.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
 			<!-- NB: Useful for JSON support. -->
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-json</artifactId>
@@ -130,6 +137,13 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-templates</artifactId>
 			<version>${groovy-templates.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<!-- NB: Simple UI Building in scripts. -->
+			<groupId>org.codehaus.groovy</groupId>
+  			<artifactId>groovy-swing</artifactId>
+			<version>${groovy-swing.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
@@ -151,19 +165,6 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<groupId>org.codehaus.gpars</groupId>
 			<artifactId>gpars</artifactId>
 			<version>${gpars.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<!-- NB: Simple UI Building in scripts. -->
-			<groupId>org.codehaus.groovy</groupId>
-  			<artifactId>groovy-swing</artifactId>
-			<version>${groovy-swing.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.codehaus.groovy</groupId>
-			<artifactId>groovy-dateutil</artifactId>
-			<version>${groovy-dateutil.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 
