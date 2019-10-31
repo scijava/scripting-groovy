@@ -98,8 +98,8 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<groovy.version>2.5.8</groovy.version>
 		<groovy-dateutil.version>${groovy.version}</groovy-dateutil.version>
 		<groovy-json.version>${groovy.version}</groovy-json.version>
-		<groovy-templates.version>${groovy.version}</groovy-templates.version>
 		<groovy-swing.version>${groovy.version}</groovy-swing.version>
+		<groovy-templates.version>${groovy.version}</groovy-templates.version>
 		<groovy-xml.version>${groovy.version}</groovy-xml.version>
 		<ivy.version>2.4.0</ivy.version>
 		<gpars.version>1.2.1</gpars.version>
@@ -133,17 +133,17 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
-			<!-- NB: Useful for template support. -->
-			<groupId>org.codehaus.groovy</groupId>
-			<artifactId>groovy-templates</artifactId>
-			<version>${groovy-templates.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
 			<!-- NB: Simple UI Building in scripts. -->
 			<groupId>org.codehaus.groovy</groupId>
   			<artifactId>groovy-swing</artifactId>
 			<version>${groovy-swing.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<!-- NB: Useful for template support. -->
+			<groupId>org.codehaus.groovy</groupId>
+			<artifactId>groovy-templates</artifactId>
+			<version>${groovy-templates.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
