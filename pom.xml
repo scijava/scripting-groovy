@@ -95,7 +95,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<!-- NB: Deploy releases to the SciJava Maven repository. -->
 		<releaseProfiles>deploy-to-scijava</releaseProfiles>
 
-		<groovy.version>2.5.1</groovy.version>
+		<groovy.version>2.5.8</groovy.version>
 		<groovy-json.version>${groovy.version}</groovy-json.version>
 		<groovy-templates.version>${groovy.version}</groovy-templates.version>
 		<groovy-xml.version>${groovy.version}</groovy-xml.version>
