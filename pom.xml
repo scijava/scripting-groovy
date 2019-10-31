@@ -99,7 +99,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<groovy-dateutil.version>2.5.8</groovy-dateutil.version>
 		<groovy-json.version>${groovy.version}</groovy-json.version>
 		<groovy-templates.version>${groovy.version}</groovy-templates.version>
-		<groovy-swing.version>2.5.8</groovy-swing.version>
+		<groovy-swing.version>${groovy.version}</groovy-swing.version>
 		<groovy-xml.version>${groovy.version}</groovy-xml.version>
 		<ivy.version>2.4.0</ivy.version>
 		<gpars.version>1.2.1</gpars.version>
