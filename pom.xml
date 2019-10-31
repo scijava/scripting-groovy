@@ -96,7 +96,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<releaseProfiles>deploy-to-scijava</releaseProfiles>
 
 		<groovy.version>2.5.8</groovy.version>
-		<groovy-dateutil.version>2.5.8</groovy-dateutil.version>
+		<groovy-dateutil.version>${groovy.version}</groovy-dateutil.version>
 		<groovy-json.version>${groovy.version}</groovy-json.version>
 		<groovy-templates.version>${groovy.version}</groovy-templates.version>
 		<groovy-swing.version>${groovy.version}</groovy-swing.version>
