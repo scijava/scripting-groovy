@@ -119,7 +119,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<version>${groovy.version}</version>
 		</dependency>
 		<dependency>
-			<!-- NB: As per Groovy 2.5 must be explicitely included. -->
+			<!-- NB: Useful for working with dates. -->
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-dateutil</artifactId>
 			<version>${groovy-dateutil.version}</version>
@@ -133,9 +133,9 @@ Wisconsin-Madison.</license.copyrightOwners>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
-			<!-- NB: Simple UI Building in scripts. -->
+			<!-- NB: Useful for building Swing UI. -->
 			<groupId>org.codehaus.groovy</groupId>
-  			<artifactId>groovy-swing</artifactId>
+			<artifactId>groovy-swing</artifactId>
 			<version>${groovy-swing.version}</version>
 			<scope>runtime</scope>
 		</dependency>
