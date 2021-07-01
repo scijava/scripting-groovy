@@ -80,8 +80,8 @@
 		<url>https://github.com/scijava/scripting-groovy/issues</url>
 	</issueManagement>
 	<ciManagement>
-		<system>Travis CI</system>
-		<url>https://travis-ci.org/scijava/scripting-groovy</url>
+		<system>GitHub Actions</system>
+		<url>https://github.com/scijava/scripting-groovy/actions</url>
 	</ciManagement>
 
 	<properties>
@@ -93,7 +93,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<license.excludes>**/script_templates/**</license.excludes>
 
 		<!-- NB: Deploy releases to the SciJava Maven repository. -->
-		<releaseProfiles>deploy-to-scijava</releaseProfiles>
+		<releaseProfiles>sign,deploy-to-scijava</releaseProfiles>
 
 		<groovy.version>2.5.8</groovy.version>
 		<groovy-dateutil.version>${groovy.version}</groovy-dateutil.version>

@@ -1,4 +1,4 @@
-[![](https://travis-ci.org/scijava/scripting-groovy.svg?branch=master)](https://travis-ci.org/scijava/scripting-groovy)
+[![](https://github.com/scijava/scripting-groovy/actions/workflows/build-main.yml/badge.svg)](https://github.com/scijava/scripting-groovy/actions/workflows/build-main.yml)
 
 # Groovy Scripting
 
