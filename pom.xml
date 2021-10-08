@@ -95,12 +95,7 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<!-- NB: Deploy releases to the SciJava Maven repository. -->
 		<releaseProfiles>sign,deploy-to-scijava</releaseProfiles>
 
-		<groovy.version>2.5.8</groovy.version>
-		<groovy-dateutil.version>${groovy.version}</groovy-dateutil.version>
-		<groovy-json.version>${groovy.version}</groovy-json.version>
-		<groovy-swing.version>${groovy.version}</groovy-swing.version>
-		<groovy-templates.version>${groovy.version}</groovy-templates.version>
-		<groovy-xml.version>${groovy.version}</groovy-xml.version>
+		<groovy-jsr223.version>${groovy.version}</groovy-jsr223.version>
 		<ivy.version>2.4.0</ivy.version>
 		<gpars.version>1.2.1</gpars.version>
 	</properties>
@@ -116,46 +111,40 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<dependency>
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy</artifactId>
-			<version>${groovy.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-jsr223</artifactId>
-			<version>${groovy.version}</version>
+			<version>${groovy-jsr223.version}</version>
 		</dependency>
 		<dependency>
 			<!-- NB: Useful for working with dates. -->
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-dateutil</artifactId>
-			<version>${groovy-dateutil.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<!-- NB: Useful for JSON support. -->
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-json</artifactId>
-			<version>${groovy-json.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<!-- NB: Useful for building Swing UI. -->
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-swing</artifactId>
-			<version>${groovy-swing.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<!-- NB: Useful for template support. -->
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-templates</artifactId>
-			<version>${groovy-templates.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<!-- NB: Useful for XML support. -->
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-xml</artifactId>
-			<version>${groovy-xml.version}</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
