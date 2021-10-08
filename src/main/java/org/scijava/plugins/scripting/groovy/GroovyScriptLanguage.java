@@ -30,17 +30,12 @@
 
 package org.scijava.plugins.scripting.groovy;
 
-import groovy.lang.GroovySystem;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 import javax.script.ScriptEngine;
 
+import org.codehaus.groovy.jsr223.GroovyScriptEngineFactory;
 import org.scijava.Priority;
 import org.scijava.plugin.Plugin;
-import org.scijava.script.AbstractScriptLanguage;
+import org.scijava.script.AdaptedScriptLanguage;
 import org.scijava.script.ScriptLanguage;
 
 /**
@@ -51,146 +46,10 @@ import org.scijava.script.ScriptLanguage;
  * @author Curtis Rueden
  * @see ScriptEngine
  */
-@Plugin(type = ScriptLanguage.class, name = "Groovy",
-	priority = Priority.HIGH_PRIORITY)
-public class GroovyScriptLanguage extends AbstractScriptLanguage {
+@Plugin(type = ScriptLanguage.class, name = "Groovy", priority = Priority.HIGH)
+public class GroovyScriptLanguage extends AdaptedScriptLanguage {
 
-	private static String VERSION = "1.5.6";
-
-	// -- ScriptEngineFactory methods --
-
-	@Override
-	public String getEngineName() {
-		return "groovy";
-	}
-
-	@Override
-	public String getEngineVersion() {
-		return GroovySystem.getVersion();
-	}
-
-	@Override
-	public String getLanguageVersion() {
-		return VERSION;
-	}
-
-	@Override
-	public List<String> getExtensions() {
-		return extensions;
-	}
-
-	@Override
-	public List<String> getMimeTypes() {
-		return mimeTypes;
-	}
-
-	@Override
-	public List<String> getNames() {
-		return names;
-	}
-
-	@Override
-	public Object getParameter(final String key) {
-
-		if (ScriptEngine.NAME.equals(key)) {
-			return "Groovy";
-		}
-		else if (ScriptEngine.ENGINE.equals(key)) {
-			return "Groovy Script Engine";
-		}
-		else if (ScriptEngine.ENGINE_VERSION.equals(key)) {
-			return GroovySystem.getVersion();
-		}
-		else if (ScriptEngine.LANGUAGE.equals(key)) {
-			return "Groovy";
-		}
-		else if (ScriptEngine.LANGUAGE_VERSION.equals(key)) {
-			return VERSION;
-		}
-		else if ("THREADING".equals(key)) {
-			return "MULTITHREADED";
-		}
-		else {
-			throw new IllegalArgumentException("Invalid key");
-		}
-
-	}
-
-	@Override
-	public ScriptEngine getScriptEngine() {
-		return new GroovyScriptEngine();
-	}
-
-	@Override
-	public String getMethodCallSyntax(final String obj, final String method,
-		final String... args)
-	{
-
-		String ret = obj + "." + method + "(";
-		final int len = args.length;
-		if (len == 0) {
-			ret += ")";
-			return ret;
-		}
-
-		for (int i = 0; i < len; i++) {
-			ret += args[i];
-			if (i != len - 1) {
-				ret += ",";
-			}
-			else {
-				ret += ")";
-			}
-		}
-		return ret;
-	}
-
-	@Override
-	public String getOutputStatement(final String toDisplay) {
-		final StringBuilder buf = new StringBuilder();
-		buf.append("println(\"");
-		final int len = toDisplay.length();
-		for (int i = 0; i < len; i++) {
-			final char ch = toDisplay.charAt(i);
-			switch (ch) {
-				case '"':
-					buf.append("\\\"");
-					break;
-				case '\\':
-					buf.append("\\\\");
-					break;
-				default:
-					buf.append(ch);
-					break;
-			}
-		}
-		buf.append("\")");
-		return buf.toString();
-	}
-
-	@Override
-	public String getProgram(final String... statements) {
-		final StringBuilder ret = new StringBuilder();
-		final int len = statements.length;
-		for (int i = 0; i < len; i++) {
-			ret.append(statements[i]);
-			ret.append('\n');
-		}
-		return ret.toString();
-	}
-
-	private static List<String> names;
-	private static List<String> extensions;
-	private static List<String> mimeTypes;
-
-	static {
-		names = new ArrayList<String>(1);
-		names.add("groovy");
-		names = Collections.unmodifiableList(names);
-
-		extensions = names;
-
-		mimeTypes = new ArrayList<String>(0);
-		mimeTypes = Collections.unmodifiableList(mimeTypes);
+	public GroovyScriptLanguage() {
+		super(new GroovyScriptEngineFactory());
 	}
 }

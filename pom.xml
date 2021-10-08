@@ -5,12 +5,12 @@
 	<parent>
 		<groupId>org.scijava</groupId>
 		<artifactId>pom-scijava</artifactId>
-		<version>27.0.1</version>
+		<version>31.1.0</version>
 		<relativePath />
 	</parent>
 
 	<artifactId>scripting-groovy</artifactId>
-	<version>0.3.1-SNAPSHOT</version>
+	<version>0.4.0-SNAPSHOT</version>
 
 	<name>SciJava Scripting: Groovy</name>
 	<description>JSR-223-compliant Groovy scripting language plugin.</description>
@@ -116,6 +116,11 @@ Wisconsin-Madison.</license.copyrightOwners>
 		<dependency>
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy</artifactId>
+			<version>${groovy.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.codehaus.groovy</groupId>
+			<artifactId>groovy-jsr223</artifactId>
 			<version>${groovy.version}</version>
 		</dependency>
 		<dependency>

@@ -79,7 +79,7 @@ public class GroovyTest extends AbstractScriptLanguageTest {
 
 		final ScriptLanguage language = scriptService.getLanguageByExtension("groovy");
 		final ScriptEngine engine = language.getScriptEngine();
-		assertEquals(GroovyScriptEngine.class, engine.getClass());
+		assertEquals("org.codehaus.groovy.jsr223.GroovyScriptEngineImpl", engine.getClass().getName());
 		engine.put("hello", 17);
 		assertEquals("17", engine.eval("hello").toString());
 		assertEquals("17", engine.get("hello").toString());
