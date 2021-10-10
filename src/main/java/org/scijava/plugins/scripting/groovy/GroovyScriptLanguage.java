@@ -41,8 +41,6 @@ import org.scijava.script.ScriptLanguage;
 /**
  * An adapter of the Groovy interpreter to the SciJava scripting interface.
  *
- * @author Mike Grogan
- * @author A. Sundararajan
  * @author Curtis Rueden
  * @see ScriptEngine
  */
