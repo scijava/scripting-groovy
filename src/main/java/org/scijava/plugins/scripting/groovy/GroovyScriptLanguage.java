@@ -31,6 +31,7 @@ package org.scijava.plugins.scripting.groovy;
 
 import java.security.CodeSource;
 
+import javax.script.CompiledScript;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
@@ -39,12 +40,15 @@ import org.codehaus.groovy.ast.CompileUnit;
 import org.codehaus.groovy.ast.ModuleNode;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.jsr223.GroovyCompiledScript;
 import org.codehaus.groovy.jsr223.GroovyScriptEngineFactory;
 import org.codehaus.groovy.jsr223.GroovyScriptEngineImpl;
 import org.scijava.Priority;
 import org.scijava.plugin.Plugin;
 import org.scijava.script.AdaptedScriptLanguage;
 import org.scijava.script.ScriptLanguage;
+import org.scijava.util.ClassUtils;
+import org.scijava.util.Types;
 
 import groovy.lang.GroovyClassLoader;
 
@@ -73,10 +77,7 @@ public class GroovyScriptLanguage extends AdaptedScriptLanguage {
 
 		final GroovyScriptEngineImpl engine = new GroovyScriptEngineImpl() {
 
-			@Override
-			public Object eval(String script, ScriptContext scriptContext) throws ScriptException {
-				final Object result = super.eval(script, scriptContext);
-
+			private void saveImports() {
 				// Retrieve the AST that was built during compilation+evaluation.
 				final CompileUnit ast = asts.get();
 				asts.remove();
@@ -88,7 +89,38 @@ public class GroovyScriptLanguage extends AdaptedScriptLanguage {
 					m.getStaticImports().values().forEach(ipt -> importRetainer.retainStaticImport(ipt));
 					m.getStaticStarImports().values().forEach(ipt -> importRetainer.retainStaticStarImport(ipt));
 				}
+			}
+
+			@Override
+			public Object eval(String script, ScriptContext scriptContext) throws ScriptException {
+				final Object result = super.eval(script, scriptContext);
+				saveImports();
 				return result;
+			}
+
+			@Override
+			public CompiledScript compile(String scriptSource) throws ScriptException {
+				// Compile the script as usual.
+				final GroovyCompiledScript cs = (GroovyCompiledScript) super.compile(scriptSource);
+
+				// HACK: Extract the compiled class. It's not accessible, but we need it.
+				final Class<?> clasz = (Class<?>) ClassUtils.getValue(Types.field(GroovyCompiledScript.class, "clasz"), cs);
+
+				// Make a new compiled script object, identical to the original but
+				// overriding its eval(ScriptContext) method so that we can save imports
+				// after evaluation, in an analogous way to what's done in
+				// eval(String, ScriptContext) above. Ideally, we would override the
+				// method GroovyScriptEngineImpl.eval(Class<?>, ScriptContext), which
+				// both code paths ultimately invoke, but that method is
+				// package-private, so we cannot do so here.
+				return new GroovyCompiledScript(this, clasz) {
+					@Override
+					public Object eval(ScriptContext scriptContext) throws ScriptException {
+						final Object result = super.eval(scriptContext);
+						saveImports();
+						return result;
+					}
+				};
 			}
 		};
 
