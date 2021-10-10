@@ -2,8 +2,7 @@
  * #%L
  * JSR-223-compliant Groovy scripting language plugin.
  * %%
- * Copyright (C) 2014 - 2017 Board of Regents of the University of
- * Wisconsin-Madison.
+ * Copyright (C) 2014 - 2021 SciJava developers.
  * %%
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,14 +31,11 @@ package org.scijava.plugins.scripting.groovy;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
-
-import java.io.IOException;
-import java.util.concurrent.ExecutionException;
+import static org.junit.Assert.assertTrue;
 
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptException;
 
 import org.junit.Test;
 import org.scijava.Context;
@@ -61,51 +57,68 @@ public class GroovyTest extends AbstractScriptLanguageTest {
 	}
 
 	@Test
-	public void testBasic() throws InterruptedException, ExecutionException,
-		IOException, ScriptException
-	{
-		final Context context = new Context(ScriptService.class);
-		final ScriptService scriptService = context.getService(ScriptService.class);
-		final String script = "1 + 2";
-		final ScriptModule m = scriptService.run("add.groovy", script, true).get();
-		final Object result = m.getReturnValue();
-		assertEquals("3", result.toString());
+	public void testBasic() throws Exception {
+		try (final Context context = new Context(ScriptService.class)) {
+			final ScriptService scriptService = context.getService(ScriptService.class);
+			final String script = "1 + 2";
+			final ScriptModule m = scriptService.run("add.groovy", script, true).get();
+			final Object result = m.getReturnValue();
+			assertEquals("3", result.toString());
+		}
 	}
 
 	@Test
-	public void testLocals() throws ScriptException {
-		final Context context = new Context(ScriptService.class);
-		final ScriptService scriptService = context.getService(ScriptService.class);
+	public void testLocals() throws Exception {
+		try (final Context context = new Context(ScriptService.class)) {
+			final ScriptService scriptService = context.getService(ScriptService.class);
 
-		final ScriptLanguage language = scriptService.getLanguageByExtension("groovy");
-		final ScriptEngine engine = language.getScriptEngine();
-		assertEquals("org.codehaus.groovy.jsr223.GroovyScriptEngineImpl", engine.getClass().getName());
-		engine.put("hello", 17);
-		assertEquals("17", engine.eval("hello").toString());
-		assertEquals("17", engine.get("hello").toString());
+			final ScriptLanguage language = scriptService.getLanguageByExtension("groovy");
+			final ScriptEngine engine = language.getScriptEngine();
+			assertEquals("org.scijava.plugins.scripting.groovy.GroovyScriptLanguage$1", engine.getClass().getName());
+			engine.put("hello", 17);
+			assertEquals("17", engine.eval("hello").toString());
+			assertEquals("17", engine.get("hello").toString());
 
-		final Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-		bindings.clear();
-		assertNull(engine.get("hello"));
+			final Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
+			bindings.clear();
+			assertNull(engine.get("hello"));
+		}
 	}
 
 	@Test
-	public void testParameters() throws InterruptedException, ExecutionException,
-		IOException, ScriptException
-	{
-		final Context context = new Context(ScriptService.class);
-		final ScriptService scriptService = context.getService(ScriptService.class);
+	public void testParameters() throws Exception {
+		try (final Context context = new Context(ScriptService.class)) {
+			final ScriptService scriptService = context.getService(ScriptService.class);
 
-		final String script = "" + //
-			"// @ScriptService ss\n" + //
-			"// @OUTPUT String language\n" + //
-			"language = ss.getLanguageByName('groovy').getLanguageName()\n";
-		final ScriptModule m = scriptService.run("hello.groovy", script, true).get();
+			final String script = "" + //
+					"// @ScriptService ss\n" + //
+					"// @OUTPUT String language\n" + //
+					"language = ss.getLanguageByName('groovy').getLanguageName()\n";
+			final ScriptModule m = scriptService.run("hello.groovy", script, true).get();
 
-		final Object actual = m.getOutput("language");
-		final String expected =
-			scriptService.getLanguageByName("groovy").getLanguageName();
-		assertEquals(expected, actual);
+			final Object actual = m.getOutput("language");
+			final String expected =
+					scriptService.getLanguageByName("groovy").getLanguageName();
+			assertEquals(expected, actual);
+		}
 	}
 
+	@Test
+	public void testImportsRetained() throws Exception {
+		try (final Context context = new Context(ScriptService.class)) {
+			final ScriptService scriptService = context.getService(ScriptService.class);
+			final ScriptEngine engine = scriptService.getLanguageByName("groovy").getScriptEngine();
+			final String script =
+				"import org.scijava.util.VersionUtils\n" +
+				"return VersionUtils.getVersion(VersionUtils.class)\n";
+			final Object result = engine.eval(script);
+			assertTrue(result instanceof String);
+			final String version = (String) result;
+			assertTrue(version, version.matches("\\d+\\.\\d+\\.\\d"));
+
+			final String script2 = "return VersionUtils.getVersion(VersionUtils.class)\n";
+			final Object result2 = engine.eval(script2);
+			assertEquals(result, result2);
+		}
+	}
 }

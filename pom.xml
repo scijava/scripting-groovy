@@ -86,10 +86,10 @@
 
 	<properties>
 		<package-name>org.scijava.plugins.scripting.groovy</package-name>
+		<main-class>org.scijava.plugins.scripting.groovy.Main</main-class>
 
 		<license.licenseName>bsd_2</license.licenseName>
-		<license.copyrightOwners>Board of Regents of the University of
-Wisconsin-Madison.</license.copyrightOwners>
+		<license.copyrightOwners>SciJava developers.</license.copyrightOwners>
 		<license.excludes>**/script_templates/**</license.excludes>
 
 		<!-- NB: Deploy releases to the SciJava Maven repository. -->
