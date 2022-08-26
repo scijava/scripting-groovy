@@ -80,6 +80,7 @@ public class GroovyScriptLanguage extends AdaptedScriptLanguage {
 			private void saveImports() {
 				// Retrieve the AST that was built during compilation+evaluation.
 				final CompileUnit ast = asts.get();
+				if (ast == null) return; // No previously saved AST for this thread.
 				asts.remove();
 
 				// Extract the imports present in the AST, and save them for next time.
