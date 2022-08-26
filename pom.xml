@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.scijava</groupId>
 		<artifactId>pom-scijava</artifactId>
-		<version>31.1.0</version>
+		<version>32.0.0-beta-6</version>
 		<relativePath />
 	</parent>
 
@@ -95,7 +95,6 @@
 		<!-- NB: Deploy releases to the SciJava Maven repository. -->
 		<releaseProfiles>sign,deploy-to-scijava</releaseProfiles>
 
-		<groovy-jsr223.version>${groovy.version}</groovy-jsr223.version>
 		<ivy.version>2.4.0</ivy.version>
 		<gpars.version>1.2.1</gpars.version>
 	</properties>
@@ -115,7 +114,6 @@
 		<dependency>
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-jsr223</artifactId>
-			<version>${groovy-jsr223.version}</version>
 		</dependency>
 		<dependency>
 			<!-- NB: Useful for working with dates. -->
