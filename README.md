@@ -4,7 +4,7 @@
 
 This library provides a
 [JSR-223-compliant](https://en.wikipedia.org/wiki/Scripting_for_the_Java_Platform)
-scripting plugin for the [Groovy](http://groovy.codehaus.org/) language.
+scripting plugin for the [Groovy](https://groovy-lang.org/) language.
 
 It is implemented as a `ScriptLanguage` plugin for the [SciJava
 Common](https://github.com/scijava/scijava-common) platform, which means that
@@ -18,5 +18,4 @@ platform, see the
 the SciJava Common wiki.
 
 See also:
-* [Groovy Scripting](http://wiki.imagej.net/Groovy_Scripting)
-  on the ImageJ wiki.
+* [Groovy Scripting](https://imagej.net/scripting/groovy) on the ImageJ wiki.
