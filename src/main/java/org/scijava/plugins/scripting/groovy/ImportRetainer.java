@@ -76,7 +76,7 @@ public class ImportRetainer extends CompilationCustomizer {
 
 		// HACK: Extract important private fields from ModuleNode class.
 		// We need to add things to them, and this is the only way.
-		final Map<String, ImportNode> imports = fieldValue("imports", ast);
+		final List<ImportNode> imports = fieldValue("imports", ast);
 		final List<ImportNode> starImports = fieldValue("starImports", ast);
 		final Map<String, ImportNode> staticImports = fieldValue("staticImports", ast);
 		final Map<String, ImportNode> staticStarImports = fieldValue("staticStarImports", ast);
@@ -88,7 +88,7 @@ public class ImportRetainer extends CompilationCustomizer {
 
 		// NB: Adapted from ModuleNode.addImport(...).
 		for (final ImportNode node : priorImports) {
-			imports.put(node.getAlias(), node);
+			imports.add(node);
 			storeLastAddedImportNode(ast, node);
 		}
 		// NB: Adapted from ModuleNode.addStarImport(...).
