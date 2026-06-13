@@ -92,9 +92,6 @@
 		<license.copyrightOwners>SciJava developers.</license.copyrightOwners>
 		<license.excludes>**/script_templates/**</license.excludes>
 
-		<!-- NB: Deploy releases to the SciJava Maven repository. -->
-		<releaseProfiles>sign,deploy-to-scijava</releaseProfiles>
-
 		<groovy.version>4.0.18</groovy.version>
 		<groovy-jsr223.version>${groovy.version}</groovy-jsr223.version>
 		<groovy-dateutil.version>${groovy.version}</groovy-dateutil.version>
