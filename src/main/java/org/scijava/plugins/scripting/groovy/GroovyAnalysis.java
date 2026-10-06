@@ -1,0 +1,617 @@
+/*
+ * #%L
+ * JSR-223-compliant Groovy scripting language plugin.
+ * %%
+ * Copyright (C) 2014 - 2026 SciJava developers.
+ * %%
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ * 
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ * #L%
+ */
+
+package org.scijava.plugins.scripting.groovy;
+
+import groovy.lang.GroovyClassLoader;
+
+import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.codehaus.groovy.ast.ASTNode;
+import org.codehaus.groovy.ast.ClassCodeVisitorSupport;
+import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.MethodNode;
+import org.codehaus.groovy.ast.ModuleNode;
+import org.codehaus.groovy.ast.Parameter;
+import org.codehaus.groovy.ast.Variable;
+import org.codehaus.groovy.ast.expr.ClassExpression;
+import org.codehaus.groovy.ast.expr.ClosureExpression;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
+import org.codehaus.groovy.ast.expr.DeclarationExpression;
+import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.expr.GStringExpression;
+import org.codehaus.groovy.ast.expr.MethodCallExpression;
+import org.codehaus.groovy.ast.expr.PropertyExpression;
+import org.codehaus.groovy.ast.expr.StaticMethodCallExpression;
+import org.codehaus.groovy.ast.expr.TupleExpression;
+import org.codehaus.groovy.ast.expr.VariableExpression;
+import org.codehaus.groovy.ast.stmt.BlockStatement;
+import org.codehaus.groovy.ast.stmt.CatchStatement;
+import org.codehaus.groovy.ast.stmt.ForStatement;
+import org.codehaus.groovy.control.CompilationUnit;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.Phases;
+import org.codehaus.groovy.control.SourceUnit;
+import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
+import org.codehaus.groovy.transform.stc.StaticTypesMarker;
+import org.scijava.util.Types;
+
+/**
+ * Static analysis of a Groovy script for code completion, using Groovy's own
+ * compiler: the script is parsed and its names resolved, then it is run
+ * through the static type checker, which infers the types of its expressions.
+ * <p>
+ * Scripts being edited are usually incomplete, and usually dynamically typed,
+ * so compilation errors are expected and ignored: completion uses whatever the
+ * compiler could work out. Only a syntax error prevents analysis; see
+ * {@link #isParsed()}.
+ * </p>
+ * <p>
+ * The analyzed source is built by {@link #prepare}, which marks the caret with
+ * the identifier {@link #CARET}, so that it can be found in the syntax tree.
+ * </p>
+ *
+ * @author Gabriel Selzer
+ */
+final class GroovyAnalysis {
+
+	/** Identifier marking the caret position in the analyzed source. */
+	static final String CARET = "__scijava_caret__";
+
+	/** Recent analyses, by source: typing a word reuses the same analysis. */
+	private static final Map<String, GroovyAnalysis> CACHE =
+		new LinkedHashMap<String, GroovyAnalysis>(16, 0.75f, true)
+		{
+
+			@Override
+			protected boolean removeEldestEntry(
+				final Map.Entry<String, GroovyAnalysis> eldest)
+			{
+				return size() > 16;
+			}
+		};
+
+	private final SourceUnit source;
+	private final ModuleNode module;
+	private final ClassLoader loader;
+
+	private GroovyAnalysis(final SourceUnit source, final ClassLoader loader) {
+		this.source = source;
+		this.module = source.getAST();
+		this.loader = loader;
+	}
+
+	// -- Source preparation --
+
+	/**
+	 * Builds the source to analyze: one line declaring the predefined variables
+	 * (script parameters, interpreter bindings), then the script up to the
+	 * caret, then {@link #CARET} and the brackets needed to close any left open.
+	 *
+	 * @param predefined Variables defined before the script runs: name to
+	 *          (Groovy) type name.
+	 * @param textBeforeCaret The script up to the caret, without the partial
+	 *          token being completed.
+	 * @return The source, or null if the caret is in a string or comment.
+	 */
+	static String prepare(final Map<String, String> predefined,
+		final String textBeforeCaret)
+	{
+		return prepare(predefined, textBeforeCaret, CARET);
+	}
+
+	/**
+	 * As {@link #prepare(Map, String)}, appending {@code tail} where the caret
+	 * is.
+	 */
+	static String prepare(final Map<String, String> predefined,
+		final String textBeforeCaret, final String tail)
+	{
+		final String body = blankDirectives(textBeforeCaret);
+		final String closers = closers(body);
+		if (closers == null) return null;
+		final StringBuilder sb = new StringBuilder();
+		for (final Map.Entry<String, String> var : predefined.entrySet()) {
+			sb.append(var.getValue()).append(' ').append(var.getKey()).append("; ");
+		}
+		return sb.append('\n').append(body).append(tail).append(closers)
+			.toString();
+	}
+
+	/**
+	 * Blanks the lines starting with {@code #}: SciJava script parameters
+	 * ({@code #@}) and shebangs, which are not Groovy. Keeps line numbers.
+	 */
+	private static String blankDirectives(final String text) {
+		final StringBuilder sb = new StringBuilder(text.length());
+		int start = 0;
+		while (start <= text.length()) {
+			int end = text.indexOf('\n', start);
+			if (end < 0) end = text.length();
+			final String line = text.substring(start, end);
+			if (!line.trim().startsWith("#")) sb.append(line);
+			if (end < text.length()) sb.append('\n');
+			start = end + 1;
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * Gets the closing brackets for those left open at the end of
+	 * {@code text}, or null if the text ends inside a string or comment.
+	 */
+	static String closers(final String text) {
+		final Deque<Character> open = new ArrayDeque<>();
+		int i = 0;
+		final int n = text.length();
+		while (i < n) {
+			final char c = text.charAt(i);
+			if (text.startsWith("//", i)) {
+				final int end = text.indexOf('\n', i);
+				if (end < 0) return null;
+				i = end + 1;
+			}
+			else if (text.startsWith("/*", i)) {
+				final int end = text.indexOf("*/", i + 2);
+				if (end < 0) return null;
+				i = end + 2;
+			}
+			else if (text.startsWith("'''", i) || text.startsWith("\"\"\"", i)) {
+				final int end = text.indexOf(text.substring(i, i + 3), i + 3);
+				if (end < 0) return null;
+				i = end + 3;
+			}
+			else if (c == '\'' || c == '"') {
+				int j = i + 1;
+				while (j < n && text.charAt(j) != c && text.charAt(j) != '\n') {
+					if (text.charAt(j) == '\\') j++;
+					j++;
+				}
+				if (j >= n || text.charAt(j) != c) return null;
+				i = j + 1;
+			}
+			else {
+				if (c == '(') open.push(')');
+				else if (c == '[') open.push(']');
+				else if (c == '{') open.push('}');
+				else if ((c == ')' || c == ']' || c == '}') && !open.isEmpty() && open
+					.peek() == c) open.pop();
+				i++;
+			}
+		}
+		final StringBuilder sb = new StringBuilder();
+		for (final char c : open) {
+			sb.append(c == '}' ? "\n}" : String.valueOf(c));
+		}
+		return sb.toString();
+	}
+
+	// -- Analysis --
+
+	/** Analyzes the given (prepared) source, or reuses a recent analysis. */
+	static GroovyAnalysis of(final String code, final ClassLoader loader) {
+		synchronized (CACHE) {
+			final GroovyAnalysis cached = CACHE.get(code);
+			if (cached != null) return cached;
+		}
+		final GroovyAnalysis analysis = analyze(code, loader);
+		synchronized (CACHE) {
+			CACHE.put(code, analysis);
+		}
+		return analysis;
+	}
+
+	private static GroovyAnalysis analyze(final String code,
+		final ClassLoader loader)
+	{
+		final CompilerConfiguration config = new CompilerConfiguration();
+		// NB: Collect all errors, rather than stopping at the first few.
+		config.setTolerance(Integer.MAX_VALUE);
+		final GroovyClassLoader gcl = new GroovyClassLoader(loader, config);
+		try {
+			final CompilationUnit unit = new CompilationUnit(config, null, gcl);
+			final SourceUnit source = unit.addSource("CompletionScript.groovy",
+				code);
+			try {
+				// Parse, resolve names and canonicalize; stop before bytecode.
+				unit.compile(Phases.CANONICALIZATION);
+			}
+			catch (final RuntimeException | LinkageError exc) {
+				// NB: Compilation errors are expected. Use what we have.
+			}
+			final ModuleNode module = source.getAST();
+			if (module != null) {
+				// NB: Unresolvable classes stop compilation before the type checker
+				// would run, and dynamic code fails it, so run it ourselves.
+				for (final ClassNode c : module.getClasses()) {
+					try {
+						new StaticTypeCheckingVisitor(source, c).visitClass(c);
+					}
+					catch (final RuntimeException | LinkageError | AssertionError exc) {
+						// NB: Keep whatever types were inferred before the failure.
+					}
+				}
+			}
+			return new GroovyAnalysis(source, loader);
+		}
+		finally {
+			try {
+				gcl.close();
+			}
+			catch (final IOException exc) {
+				// NB: Nothing to clean up, then.
+			}
+		}
+	}
+
+	/** True iff the source parsed (syntax errors prevent any analysis). */
+	boolean isParsed() {
+		return module != null;
+	}
+
+	/**
+	 * Gets the expression whose member is being completed, e.g. {@code img} in
+	 * {@code img.CARET}, or null if the caret is not after a dot.
+	 */
+	Expression receiverAtCaret() {
+		final Expression[] found = { null };
+		visit(new Visitor() {
+
+			@Override
+			public void visitPropertyExpression(final PropertyExpression e) {
+				if (CARET.equals(e.getPropertyAsString())) found[0] = e
+					.getObjectExpression();
+				super.visitPropertyExpression(e);
+			}
+
+			@Override
+			public void visitMethodCallExpression(final MethodCallExpression e) {
+				if (CARET.equals(e.getMethodAsString()) && !e.isImplicitThis()) {
+					found[0] = e.getObjectExpression();
+				}
+				super.visitMethodCallExpression(e);
+			}
+		});
+		return found[0];
+	}
+
+	/**
+	 * Gets the variables visible at the caret, with their types (null if
+	 * unknown), innermost last.
+	 */
+	Map<String, ClassNode> variablesAtCaret() {
+		final ASTNode caret = caretNode();
+		if (caret == null) return Collections.emptyMap();
+		final int line = caret.getLineNumber(), column = caret.getColumnNumber();
+		final Map<String, ClassNode> vars = new LinkedHashMap<>();
+		visit(new Visitor() {
+
+			private boolean contains(final ASTNode node) {
+				if (node.getLineNumber() < 0) return true; // synthetic: unknown span
+				return before(node.getLineNumber(), node.getColumnNumber()) && //
+					!before(node.getLastLineNumber(), node.getLastColumnNumber());
+			}
+
+			private boolean before(final int l, final int c) {
+				return l < line || l == line && c <= column;
+			}
+
+			private void add(final Variable v) {
+				if (CARET.equals(v.getName())) return;
+				vars.remove(v.getName()); // NB: Re-insert, so innermost comes last.
+				vars.put(v.getName(), v.isDynamicTyped() ? null : v.getOriginType());
+			}
+
+			@Override
+			protected void visitConstructorOrMethod(final MethodNode node,
+				final boolean isConstructor)
+			{
+				if (!node.isScriptBody() && !contains(node)) return;
+				for (final Parameter p : node.getParameters()) add(p);
+				super.visitConstructorOrMethod(node, isConstructor);
+			}
+
+			@Override
+			public void visitClosureExpression(final ClosureExpression e) {
+				if (!contains(e)) return;
+				if (e.getParameters() != null) {
+					for (final Parameter p : e.getParameters()) add(p);
+				}
+				super.visitClosureExpression(e);
+			}
+
+			@Override
+			public void visitBlockStatement(final BlockStatement block) {
+				if (contains(block)) super.visitBlockStatement(block);
+			}
+
+			@Override
+			public void visitForLoop(final ForStatement loop) {
+				if (!contains(loop)) return;
+				final Parameter v = loop.getVariable();
+				if (v != null && v != ForStatement.FOR_LOOP_DUMMY) add(v);
+				super.visitForLoop(loop);
+			}
+
+			@Override
+			public void visitCatchStatement(final CatchStatement statement) {
+				if (!contains(statement)) return;
+				add(statement.getVariable());
+				super.visitCatchStatement(statement);
+			}
+
+			@Override
+			public void visitDeclarationExpression(final DeclarationExpression e) {
+				if (before(e.getLineNumber(), e.getColumnNumber())) {
+					if (e.isMultipleAssignmentDeclaration()) {
+						for (final Expression v : e.getTupleExpression()
+							.getExpressions())
+						{
+							if (v instanceof VariableExpression) {
+								addDeclared((VariableExpression) v);
+							}
+						}
+					}
+					else addDeclared(e.getVariableExpression());
+				}
+				super.visitDeclarationExpression(e);
+			}
+
+			private void addDeclared(final VariableExpression v) {
+				if (CARET.equals(v.getName())) return;
+				vars.remove(v.getName());
+				vars.put(v.getName(), typeOf(v));
+			}
+		});
+		return vars;
+	}
+
+	/** The call whose arguments contain the caret marker. */
+	static final class Call {
+
+		/**
+		 * The call: a {@link MethodCallExpression},
+		 * {@link StaticMethodCallExpression} or
+		 * {@link ConstructorCallExpression}.
+		 */
+		final Expression expression;
+
+		/** Its arguments, up to the one containing the caret. */
+		final List<Expression> arguments;
+
+		/** Index of the argument containing the caret. */
+		final int active;
+
+		private Call(final Expression expression,
+			final List<Expression> arguments, final int active)
+		{
+			this.expression = expression;
+			this.arguments = arguments;
+			this.active = active;
+		}
+	}
+
+	/**
+	 * Gets the innermost call whose arguments contain the caret marker, e.g.
+	 * {@code max} in {@code Math.max(1.5, CARET)}; or null if there is none.
+	 */
+	Call callAtCaret() {
+		final Call[] found = { null };
+		visit(new Visitor() {
+
+			@Override
+			public void visitMethodCallExpression(final MethodCallExpression e) {
+				consider(e, e.getArguments());
+				super.visitMethodCallExpression(e);
+			}
+
+			@Override
+			public void visitStaticMethodCallExpression(
+				final StaticMethodCallExpression e)
+			{
+				consider(e, e.getArguments());
+				super.visitStaticMethodCallExpression(e);
+			}
+
+			@Override
+			public void visitConstructorCallExpression(
+				final ConstructorCallExpression e)
+			{
+				consider(e, e.getArguments());
+				super.visitConstructorCallExpression(e);
+			}
+
+			private void consider(final Expression call, final Expression args) {
+				if (!(args instanceof TupleExpression)) return;
+				final List<Expression> list = ((TupleExpression) args)
+					.getExpressions();
+				for (int i = 0; i < list.size(); i++) {
+					if (!containsCaret(list.get(i))) continue;
+					// NB: Visited outside in, so the innermost call is found last.
+					found[0] = new Call(call, list.subList(0, i + 1), i);
+					return;
+				}
+			}
+		});
+		return found[0];
+	}
+
+	/**
+	 * Gets the type of an expression, e.g. an argument, as a type name for
+	 * {@link org.scijava.code.api.Signatures}; or null if unknown.
+	 */
+	String typeName(final Expression e) {
+		if (e instanceof GStringExpression) return String.class.getName();
+		if (e instanceof ConstantExpression) {
+			final Object value = ((ConstantExpression) e).getValue();
+			if (value == null) return null;
+			if (value instanceof Integer) return "int";
+			if (value instanceof Long) return "long";
+			if (value instanceof Double) return "double";
+			if (value instanceof Float) return "float";
+			if (value instanceof Boolean) return "boolean";
+			return value.getClass().getName(); // e.g. String, BigDecimal
+		}
+		final Class<?> c = toClass(typeOf(e));
+		if (c == null || c == Object.class) return null; // dynamic: unknown
+		final String name = c.getCanonicalName();
+		return name == null ? c.getName() : name;
+	}
+
+	/** Gets the script's own methods (e.g. {@code def area(w, h)}) by name. */
+	List<MethodNode> scriptMethods(final String name) {
+		final List<MethodNode> methods = new ArrayList<>();
+		if (module == null) return methods;
+		for (final ClassNode c : module.getClasses()) {
+			if (c.isScript()) methods.addAll(c.getMethods(name));
+		}
+		return methods;
+	}
+
+	/** True iff the expression is, or contains, the caret marker. */
+	private boolean containsCaret(final Expression e) {
+		final boolean[] found = { false };
+		e.visit(new Visitor() {
+
+			@Override
+			public void visitVariableExpression(final VariableExpression v) {
+				if (CARET.equals(v.getName())) found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	// -- Types --
+
+	/** Gets the (inferred or declared) type of an expression, or null. */
+	static ClassNode typeOf(final Expression e) {
+		if (e == null) return null;
+		// NB: The type checker infers Class<T> for a class reference; we want T.
+		if (e instanceof ClassExpression) return e.getType();
+		final Object inferred = e.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE);
+		if (inferred instanceof ClassNode) return (ClassNode) inferred;
+		if (e instanceof VariableExpression) {
+			final Variable v = ((VariableExpression) e).getAccessedVariable();
+			if (v != null && v != e && !v.isDynamicTyped()) return v.getOriginType();
+			final VariableExpression ve = (VariableExpression) e;
+			return ve.isDynamicTyped() ? null : ve.getOriginType();
+		}
+		final ClassNode type = e.getType();
+		if (type == null || "java.lang.Object".equals(type.getName())) return null;
+		return type;
+	}
+
+	/**
+	 * Gets the Java class of a type, or null if it is unknown or defined in the
+	 * script itself.
+	 */
+	Class<?> toClass(final ClassNode type) {
+		if (type == null) return null;
+		final ClassNode t = type.redirect();
+		if (t.isPrimaryClassNode()) return null; // NB: Not compiled.
+		try {
+			return t.getTypeClass();
+		}
+		catch (final RuntimeException | LinkageError | AssertionError exc) {
+			// NB: Not loaded yet; load it by name.
+		}
+		return load(t.getName(), loader);
+	}
+
+	/**
+	 * Loads a type by name, e.g. {@code int}, {@code long[]}, {@code a.b.C} or
+	 * {@code a.b.Outer.Inner}, or returns null if it cannot be loaded.
+	 */
+	static Class<?> load(final String name, final ClassLoader loader) {
+		if (name == null) return null;
+		final Class<?> c = Types.load(name, loader);
+		if (c != null) return c;
+		// NB: Perhaps a nested class, named canonically: a.b.Outer.Inner.
+		final int dot = name.lastIndexOf('.');
+		return dot < 0 ? null : load(name.substring(0, dot) + "$" + name
+			.substring(dot + 1), loader);
+	}
+
+	// -- Helper methods --
+
+	/** Gets the node of the caret marker. */
+	private ASTNode caretNode() {
+		final ASTNode[] found = { null };
+		visit(new Visitor() {
+
+			@Override
+			public void visitVariableExpression(final VariableExpression e) {
+				if (CARET.equals(e.getName())) found[0] = e;
+				super.visitVariableExpression(e);
+			}
+
+			@Override
+			public void visitPropertyExpression(final PropertyExpression e) {
+				if (CARET.equals(e.getPropertyAsString())) found[0] = e.getProperty();
+				super.visitPropertyExpression(e);
+			}
+
+			@Override
+			public void visitMethodCallExpression(final MethodCallExpression e) {
+				if (CARET.equals(e.getMethodAsString())) found[0] = e.getMethod();
+				super.visitMethodCallExpression(e);
+			}
+		});
+		return found[0];
+	}
+
+	/** Visits every class (including the script itself) of the source. */
+	private void visit(final Visitor visitor) {
+		if (module == null) return;
+		for (final ClassNode c : module.getClasses()) {
+			try {
+				visitor.visitClass(c);
+			}
+			catch (final RuntimeException exc) {
+				// NB: Malformed tree; skip this class.
+			}
+		}
+	}
+
+	private abstract class Visitor extends ClassCodeVisitorSupport {
+
+		@Override
+		protected SourceUnit getSourceUnit() {
+			return source;
+		}
+	}
+}
