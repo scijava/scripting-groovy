@@ -73,6 +73,8 @@ import org.scijava.code.api.CompletionRequest;
 import org.scijava.code.api.CompletionResult;
 import org.scijava.code.api.Completions;
 import org.scijava.code.api.ParameterChoices;
+import org.scijava.code.api.ScriptDialect;
+import org.scijava.code.api.ScriptDocument;
 import org.scijava.code.api.SignatureHelp;
 import org.scijava.code.api.Signatures;
 import org.scijava.plugin.Plugin;
@@ -106,6 +108,9 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 
 	/** Upper bound on class-name suggestions, which can be very numerous. */
 	private static final int MAX_CLASSES = 500;
+
+	/** How scripts see their predefined variables: as declared Java objects. */
+	private static final GroovyDialect DIALECT = new GroovyDialect();
 
 	/** An import statement being typed: "import a.b.C". */
 	private static final Pattern IMPORT = Pattern.compile(
@@ -154,10 +159,11 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 			return CompletionResult.EMPTY;
 		}
 
-		final Map<String, String> predefined = predefinedVariables(request);
-		final String textBefore = request.text().substring(0, replaceStart);
-		final GroovyAnalysis analysis = analyze(predefined, textBefore, line
-			.substring(0, line.length() - prefix.length()));
+		final Map<String, Class<?>> predefined = predefinedVariables(request);
+		final ScriptDocument doc = ScriptDocument.of(request.text().substring(0,
+			replaceStart), predefined, DIALECT, null);
+		final GroovyAnalysis analysis = analyze(doc, predefined, line.substring(0,
+			line.length() - prefix.length()));
 		if (analysis == null) return CompletionResult.EMPTY; // string or comment
 
 		final List<Completion> completions = new ArrayList<>();
@@ -166,12 +172,13 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 		}
 		else {
 			final Map<String, ClassNode> vars = analysis.variablesAtCaret();
-			completions.addAll(variableCompletions(vars, predefined, prefix));
+			completions.addAll(variableCompletions(vars, doc.parameters(),
+				prefix));
 			completions.addAll(keywordCompletions(prefix));
 			completions.addAll(classCompletions(request.text(), prefix));
 		}
 		return new CompletionResult(completions, replaceStart, choices(analysis,
-			predefined));
+			doc.parameters()));
 	}
 
 	@Override
@@ -183,10 +190,10 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 		id.find();
 		final String prefix = id.group();
 		final int start = request.offset() - prefix.length();
-		final Map<String, String> predefined = predefinedVariables(request);
-		final GroovyAnalysis analysis = analyze(predefined, request.text()
-			.substring(0, start), line.substring(0, line.length() - prefix
-				.length()));
+		final Map<String, Class<?>> predefined = predefinedVariables(request);
+		final GroovyAnalysis analysis = analyze(ScriptDocument.of(request.text()
+			.substring(0, start), predefined, DIALECT, null), predefined, line
+				.substring(0, line.length() - prefix.length()));
 		if (analysis == null) return SignatureHelp.NONE; // string or comment
 		final GroovyAnalysis.Call call = analysis.callAtCaret();
 		if (call == null) return SignatureHelp.NONE;
@@ -217,14 +224,15 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 	 *
 	 * @return The analysis, or null if the caret is in a string or comment.
 	 */
-	private GroovyAnalysis analyze(final Map<String, String> predefined,
-		final String textBefore, final String lineBefore)
+	private GroovyAnalysis analyze(final ScriptDocument doc,
+		final Map<String, Class<?>> predefined, final String lineBefore)
 	{
-		final String code = GroovyAnalysis.prepare(predefined, textBefore);
+		final String code = GroovyAnalysis.prepare(doc);
 		if (code == null) return null;
 		final GroovyAnalysis analysis = GroovyAnalysis.of(code, loader());
 		if (analysis.isParsed()) return analysis;
-		final String lineCode = GroovyAnalysis.prepare(predefined, lineBefore);
+		final String lineCode = GroovyAnalysis.prepare(ScriptDocument.of(
+			lineBefore, predefined, DIALECT, null));
 		return lineCode == null ? analysis : GroovyAnalysis.of(lineCode, loader());
 	}
 
@@ -552,18 +560,18 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 	 * Gets the variables defined before the script runs: its parameters (e.g.
 	 * {@code #@ String name}) and, in a live interpreter, the engine's bindings.
 	 *
-	 * @return Map of variable name to type name.
+	 * @return Map of variable name to type.
 	 */
-	private Map<String, String> predefinedVariables(
+	private Map<String, Class<?>> predefinedVariables(
 		final CompletionRequest request)
 	{
-		final Map<String, String> vars = new LinkedHashMap<>();
+		final Map<String, Class<?>> vars = new LinkedHashMap<>();
 		final Context context = getContext();
 		final CodeCompletionService service = context == null ? null : context
 			.getService(CodeCompletionService.class);
 		if (service != null) {
 			service.scriptParameters(request.text()).forEach((name, type) -> {
-				if (isIdentifier(name)) vars.put(name, typeName(type));
+				if (isIdentifier(name)) vars.put(name, type);
 			});
 		}
 		final ScriptContext scriptContext = request.context();
@@ -574,8 +582,8 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 				final String name = entry.getKey();
 				if (!isIdentifier(name) || name.startsWith("__")) continue;
 				final Object value = entry.getValue();
-				vars.put(name, value == null ? "Object" : typeName(
-					publicType(value.getClass())));
+				vars.put(name, value == null ? Object.class : publicType(value
+					.getClass()));
 			}
 		}
 		return vars;
@@ -614,9 +622,15 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 	 * {@code java.util.List} or {@code int[]}; or {@code Object} if it has none
 	 * (e.g. an anonymous class).
 	 */
-	private static String typeName(final Class<?> c) {
+	/** Gets the name by which Groovy code refers to {@code c}. */
+	static String typeName(final Class<?> c) {
 		final String name = c == null ? null : c.getCanonicalName();
 		return name == null ? "Object" : name;
+	}
+
+	@Override
+	public ScriptDialect dialect() {
+		return DIALECT;
 	}
 
 	/**

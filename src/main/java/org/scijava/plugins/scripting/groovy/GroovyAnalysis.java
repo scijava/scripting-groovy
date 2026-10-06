@@ -68,6 +68,7 @@ import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
+import org.scijava.code.api.ScriptDocument;
 import org.scijava.util.Types;
 
 /**
@@ -118,56 +119,26 @@ final class GroovyAnalysis {
 	// -- Source preparation --
 
 	/**
-	 * Builds the source to analyze: one line declaring the predefined variables
-	 * (script parameters, interpreter bindings), then the script up to the
-	 * caret, then {@link #CARET} and the brackets needed to close any left open.
+	 * Builds the source to analyze: the script up to the caret as plain Groovy
+	 * (its predefined variables declared, see {@link GroovyDialect}), then
+	 * {@link #CARET} and the brackets needed to close any left open.
 	 *
-	 * @param predefined Variables defined before the script runs: name to
-	 *          (Groovy) type name.
-	 * @param textBeforeCaret The script up to the caret, without the partial
-	 *          token being completed.
+	 * @param doc The script up to the caret, without the partial token being
+	 *          completed.
 	 * @return The source, or null if the caret is in a string or comment.
 	 */
-	static String prepare(final Map<String, String> predefined,
-		final String textBeforeCaret)
-	{
-		return prepare(predefined, textBeforeCaret, CARET);
+	static String prepare(final ScriptDocument doc) {
+		return prepare(doc, CARET);
 	}
 
 	/**
-	 * As {@link #prepare(Map, String)}, appending {@code tail} where the caret
-	 * is.
+	 * As {@link #prepare(ScriptDocument)}, appending {@code tail} where the
+	 * caret is.
 	 */
-	static String prepare(final Map<String, String> predefined,
-		final String textBeforeCaret, final String tail)
-	{
-		final String body = blankDirectives(textBeforeCaret);
-		final String closers = closers(body);
+	static String prepare(final ScriptDocument doc, final String tail) {
+		final String closers = closers(doc.text());
 		if (closers == null) return null;
-		final StringBuilder sb = new StringBuilder();
-		for (final Map.Entry<String, String> var : predefined.entrySet()) {
-			sb.append(var.getValue()).append(' ').append(var.getKey()).append("; ");
-		}
-		return sb.append('\n').append(body).append(tail).append(closers)
-			.toString();
-	}
-
-	/**
-	 * Blanks the lines starting with {@code #}: SciJava script parameters
-	 * ({@code #@}) and shebangs, which are not Groovy. Keeps line numbers.
-	 */
-	private static String blankDirectives(final String text) {
-		final StringBuilder sb = new StringBuilder(text.length());
-		int start = 0;
-		while (start <= text.length()) {
-			int end = text.indexOf('\n', start);
-			if (end < 0) end = text.length();
-			final String line = text.substring(start, end);
-			if (!line.trim().startsWith("#")) sb.append(line);
-			if (end < text.length()) sb.append('\n');
-			start = end + 1;
-		}
-		return sb.toString();
+		return doc.text() + tail + closers;
 	}
 
 	/**
