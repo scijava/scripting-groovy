@@ -95,6 +95,10 @@
 		<license.excludes>**/script_templates/**</license.excludes>
 
 		<gpars.version>1.2.1</gpars.version>
+
+		<!-- NB: scijava-code-api is built against this scijava-common. -->
+		<scijava-common.version>2.101.0</scijava-common.version>
+		<scijava-code-api.version>0.1.0-SNAPSHOT</scijava-code-api.version>
 	</properties>
 
 	<dependencies>
@@ -102,6 +106,11 @@
 		<dependency>
 			<groupId>org.scijava</groupId>
 			<artifactId>scijava-common</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.scijava</groupId>
+			<artifactId>scijava-code-api</artifactId>
+			<version>${scijava-code-api.version}</version>
 		</dependency>
 
 		<!-- Third-party dependencies -->
