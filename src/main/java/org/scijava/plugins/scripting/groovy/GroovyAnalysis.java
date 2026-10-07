@@ -69,6 +69,9 @@ import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.SourceUnit;
+import org.codehaus.groovy.control.messages.Message;
+import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
+import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.codehaus.groovy.transform.stc.TypeCheckingExtension;
@@ -299,6 +302,90 @@ final class GroovyAnalysis {
 			e.getLeftExpression() instanceof VariableExpression &&
 			((VariableExpression) e.getLeftExpression())
 				.getAccessedVariable() instanceof DynamicVariable;
+	}
+
+	/** A problem the compiler found in the analyzed source. */
+	static final class Problem {
+
+		/** Where it starts and ends: 1-based lines and columns. */
+		final int line, column, endLine, endColumn;
+
+		final String message;
+
+		/** Whether it may yet work at run time (else it fails for sure). */
+		final boolean warning;
+
+		private Problem(final SyntaxException e, final String message,
+			final boolean warning)
+		{
+			line = e.getStartLine();
+			column = e.getStartColumn();
+			endLine = e.getEndLine();
+			endColumn = e.getEndColumn();
+			this.message = message;
+			this.warning = warning;
+		}
+	}
+
+	/** The type checker's messages, e.g. about a call it cannot resolve. */
+	private static final String TYPE_CHECKING = "[Static type checking] - ";
+
+	/**
+	 * Gets the problems the compiler found that would also trouble the script
+	 * when it runs: syntax errors and unresolvable classes; and, as warnings,
+	 * methods and properties the type checker cannot find on a known type
+	 * (e.g. {@code "abc".fooBar()}). The type checker's other complaints, e.g.
+	 * about dynamically typed code, are left out: Groovy resolves those when
+	 * the script runs.
+	 */
+	List<Problem> problems() {
+		final List<Problem> problems = new ArrayList<>();
+		final List<? extends Message> errors = source.getErrorCollector()
+			.getErrors();
+		if (errors == null) return problems;
+		for (final Message m : errors) {
+			if (!(m instanceof SyntaxErrorMessage)) continue;
+			final SyntaxException e = ((SyntaxErrorMessage) m).getCause();
+			final String message = e.getOriginalMessage() == null ? null : e
+				.getOriginalMessage().trim();
+			if (message == null || message.contains(CARET)) continue;
+			if (!message.startsWith(TYPE_CHECKING)) {
+				problems.add(new Problem(e, message, false));
+				continue;
+			}
+			final String complaint = message.substring(TYPE_CHECKING.length())
+				.replace(" Please check if the declared type is correct and if the " +
+					"method exists.", "");
+			if (isKnownTypeMissing(complaint)) {
+				problems.add(new Problem(e, complaint, true));
+			}
+		}
+		return problems;
+	}
+
+	/**
+	 * True iff the type checker's complaint is that a known, specific type
+	 * lacks a method or property: rather than, e.g., that a variable's type is
+	 * unknown ({@code Object}), or that the script calls methods it does not
+	 * declare (which bindings may provide when it runs).
+	 */
+	private static boolean isKnownTypeMissing(final String complaint) {
+		final String type;
+		if (complaint.startsWith("Cannot find matching method ")) {
+			final String call = complaint.substring(
+				"Cannot find matching method ".length());
+			final int hash = call.indexOf('#');
+			if (hash < 0) return false;
+			type = call.substring(0, hash);
+		}
+		else if (complaint.startsWith("No such property: ")) {
+			final int at = complaint.indexOf(" for class: ");
+			if (at < 0) return false;
+			type = complaint.substring(at + " for class: ".length()).trim();
+		}
+		else return false;
+		return type.contains(".") && !type.equals("java.lang.Object") && !type
+			.startsWith("groovy.lang.");
 	}
 
 	/** True iff the source parsed (syntax errors prevent any analysis). */

@@ -35,6 +35,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -126,6 +127,39 @@ public class GroovyCompletionTest {
 			.getLabel())).findFirst().orElse(null);
 		assertTrue(String.valueOf(labels(items)), zed != null);
 		assertEquals("java.lang.String zed", zed.getDetail());
+	}
+
+	@Test
+	public void testDiagnostics() {
+		// Syntax errors, and unresolvable classes: errors, where they are in the
+		// script (after its parameter lines, too).
+		assertEquals(Collections.singletonList("Error@1:11-12 Unexpected input: '+'"),
+			problems("#@ double sigma\ndef x = (1 +\n"));
+		assertEquals(Collections.singletonList(
+			"Error@0:0-14 unable to resolve class foo.Bar"), problems(
+				"import foo.Bar\nx = 1\n"));
+		assertEquals(Collections.singletonList(
+			"Error@0:0-9 unable to resolve class Foo"), problems("new Foo()\n"));
+		// Members a known type lacks: warnings, also through calls and bindings.
+		assertEquals(Collections.singletonList(
+			"Warning@1:0-24 Cannot find matching method java.lang.String#fooBar()."),
+			problems("def s = 'abc'\ns.toUpperCase().fooBar()\n"));
+		assertEquals(Collections.singletonList(
+			"Warning@1:0-10 Cannot find matching method java.lang.String#fooBar()."),
+			problems("z = 'abc'\nz.fooBar()\n"));
+		assertEquals(Collections.singletonList(
+			"Warning@1:0-5 No such property: nme for class: java.io.File"), problems(
+				"def f = new File('a')\nf.nme\n"));
+		// Dynamic code, which Groovy resolves when the script runs: nothing.
+		for (final String fine : new String[] { "x = 1\nprintln x\n",
+			"#@ String name\nprintln name.toUpperCase()\n",
+			"def m = [:]\nm.foo = 1\nprintln m.foo\n",
+			"def o = something()\no.foo()\n", "def c = { it * 2 }\nc(3)\n",
+			"def x\nx = 'a'\nx.size()\n", "[1, 2].collect { it }.sum()\n",
+			"println undefinedThing\n", "class A { def go() { bar() } }\n" })
+		{
+			assertEquals(fine, Collections.emptyList(), problems(fine));
+		}
 	}
 
 	@Test
@@ -313,6 +347,15 @@ public class GroovyCompletionTest {
 	}
 
 	// -- Helper methods --
+
+	/** The problems found in a script, e.g. {@code Error@0:4-6 message}. */
+	private List<String> problems(final String code) {
+		return servers.diagnose(groovy, "untitled:/check.groovy", code, 20_000)
+			.stream().map(d -> d.getSeverity() + "@" + d.getRange().getStart()
+				.getLine() + ":" + d.getRange().getStart().getCharacter() + "-" + d
+					.getRange().getEnd().getCharacter() + " " + d.getMessage().getLeft())
+			.collect(Collectors.toList());
+	}
 
 	private SignatureHelp help(final String code) {
 		final MergedLanguageServer server = servers.server(groovy);
