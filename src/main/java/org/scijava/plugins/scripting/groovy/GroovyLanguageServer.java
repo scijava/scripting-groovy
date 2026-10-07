@@ -29,7 +29,6 @@
 
 package org.scijava.plugins.scripting.groovy;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -61,36 +60,33 @@ import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression;
-import org.scijava.Context;
-import org.scijava.Priority;
-import org.scijava.code.api.AbstractCodeCompleterPlugin;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.CompletionItemLabelDetails;
+import org.eclipse.lsp4j.CompletionList;
+import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.TextEdit;
 import org.scijava.code.api.ClassIndex;
-import org.scijava.code.api.CodeCompleterPlugin;
 import org.scijava.code.api.CodeCompletionService;
-import org.scijava.code.api.Completion;
-import org.scijava.code.api.Completion.TextEdit;
-import org.scijava.code.api.CompletionRequest;
-import org.scijava.code.api.CompletionResult;
-import org.scijava.code.api.Completions;
-import org.scijava.code.api.ParameterChoices;
-import org.scijava.code.api.ScriptDialect;
 import org.scijava.code.api.ScriptDocument;
-import org.scijava.code.api.SignatureHelp;
-import org.scijava.code.api.Signatures;
-import org.scijava.plugin.Plugin;
+import org.scijava.code.lsp.Callable;
+import org.scijava.code.lsp.Environment;
+import org.scijava.code.lsp.Members;
+import org.scijava.code.lsp.ScriptLanguageServer;
+import org.scijava.code.lsp.Signatures;
 import org.scijava.util.Types;
 
 /**
- * Code completion for Groovy, driven by Groovy's own compiler (see
- * {@link GroovyAnalysis}): members of the expression before a dot, using the
- * types the static type checker infers; variables in scope; keywords; class
- * names, with automatic imports; and import statements.
+ * An in-process language server for Groovy, driven by Groovy's own compiler
+ * (see {@link GroovyAnalysis}): members of the expression before a dot, using
+ * the types the static type checker infers; variables in scope; keywords;
+ * class names, with automatic imports; import statements; and, in a call's
+ * arguments, the variables fitting the parameter first. Signature help rates
+ * the overloads against the arguments typed.
  *
  * @author Gabriel Selzer
  */
-@Plugin(type = CodeCompleterPlugin.class, name = "Groovy",
-	priority = Priority.HIGH)
-public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
+public class GroovyLanguageServer extends ScriptLanguageServer {
 
 	private static final List<String> KEYWORDS = Arrays.asList("as", "assert",
 		"boolean", "break", "byte", "case", "catch", "char", "class", "continue",
@@ -110,7 +106,7 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 	private static final int MAX_CLASSES = 500;
 
 	/** How scripts see their predefined variables: as declared Java objects. */
-	private static final GroovyDialect DIALECT = new GroovyDialect();
+	static final GroovyDialect DIALECT = new GroovyDialect();
 
 	/** An import statement being typed: "import a.b.C". */
 	private static final Pattern IMPORT = Pattern.compile(
@@ -127,24 +123,38 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 	private static final Pattern QUALIFIER = Pattern.compile(
 		"((?:[a-z_][\\w$]*\\.)+)\\s*$");
 
-	public GroovyCodeCompleter() {
+	static {
 		// Warm the class index in the background, as completion needs it.
 		new Thread(ClassIndex::ensureCache, "Groovy-ClassIndex-warmup").start();
 	}
 
+	private final CodeCompletionService completion;
+
+	/**
+	 * @param completion Reads the scripts' parameters.
+	 * @param environment Where the scripts run (e.g. a live interpreter).
+	 */
+	public GroovyLanguageServer(final CodeCompletionService completion,
+		final Environment environment)
+	{
+		super(environment);
+		this.completion = completion;
+	}
+
 	@Override
-	public CompletionResult complete(final CompletionRequest request) {
-		final String line = request.lineToCaret();
-		final int caret = request.offset();
+	protected CompletionList complete(final Document doc, final int caret) {
+		final String text = doc.text();
+		final String line = doc.lineTo(caret);
+		final List<CompletionItem> none = new ArrayList<>();
 		// NB: Lines starting with '#' are SciJava script parameters (or shebangs).
-		if (line.trim().startsWith("#")) return CompletionResult.EMPTY;
+		if (line.trim().startsWith("#")) return list(doc, caret, caret, none);
 
 		final Matcher imp = IMPORT.matcher(line);
 		if (imp.find()) {
-			if (imp.group(1) != null) return CompletionResult.EMPTY; // static
+			if (imp.group(1) != null) return list(doc, caret, caret, none);
 			final String token = imp.group(2);
-			return new CompletionResult(importCompletions(token), caret - token
-				.length());
+			return list(doc, caret - token.length(), caret, importCompletions(
+				token));
 		}
 
 		final Matcher id = IDENTIFIER.matcher(line);
@@ -154,69 +164,132 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 		final String before = line.substring(0, line.length() - prefix.length());
 		final boolean member = before.trim().endsWith(".") && !before.trim()
 			.endsWith("..") && !NUMBER_DOT.matcher(before).find();
-		if (!member && prefix.isEmpty()) return CompletionResult.EMPTY;
+		if (!member && prefix.isEmpty()) {
+			return list(doc, caret, caret, argumentChoices(text, caret, line));
+		}
 		if (!member && Character.isDigit(prefix.charAt(0))) {
-			return CompletionResult.EMPTY;
+			return list(doc, caret, caret, none);
 		}
 
-		final Map<String, Class<?>> predefined = predefinedVariables(request);
-		final ScriptDocument doc = ScriptDocument.of(request.text().substring(0,
+		final Map<String, Class<?>> predefined = predefinedVariables(text);
+		final ScriptDocument sd = ScriptDocument.of(text.substring(0,
 			replaceStart), predefined, DIALECT, null);
-		final GroovyAnalysis analysis = analyze(doc, predefined, line.substring(0,
+		final GroovyAnalysis analysis = analyze(sd, predefined, line.substring(0,
 			line.length() - prefix.length()));
-		if (analysis == null) return CompletionResult.EMPTY; // string or comment
+		if (analysis == null) return list(doc, caret, caret, none); // string, comment
 
-		final List<Completion> completions = new ArrayList<>();
-		if (member) {
-			completions.addAll(memberCompletions(analysis, before, prefix));
-		}
+		final List<CompletionItem> items = new ArrayList<>();
+		if (member) items.addAll(memberCompletions(analysis, before, prefix));
 		else {
-			final Map<String, ClassNode> vars = analysis.variablesAtCaret();
-			completions.addAll(variableCompletions(vars, doc.parameters(),
-				prefix));
-			completions.addAll(keywordCompletions(prefix));
-			completions.addAll(classCompletions(request.text(), prefix));
+			items.addAll(variableCompletions(analysis.variablesAtCaret(), sd
+				.parameters(), prefix));
+			items.addAll(keywordCompletions(prefix));
+			items.addAll(classCompletions(doc, prefix));
 		}
-		return new CompletionResult(completions, replaceStart, choices(analysis,
-			doc.parameters()));
+		return list(doc, replaceStart, caret, items);
 	}
 
 	@Override
-	public SignatureHelp signatureHelp(final CompletionRequest request) {
-		final String line = request.lineToCaret();
-		if (line.trim().startsWith("#")) return SignatureHelp.NONE;
+	protected SignatureHelp signatureHelp(final Document doc, final int caret) {
+		final String text = doc.text();
+		final String line = doc.lineTo(caret);
+		if (line.trim().startsWith("#")) return null;
+		final CallContext call = callContext(text, caret, line);
+		if (call == null) return null;
+		final List<Callable> callables = callables(call.analysis, call.call);
+		if (callables.isEmpty()) return null;
+		// NB: Reflection lists methods in no particular order: sort them by
+		// their parameter types, so that equally good fits come out the same.
+		callables.sort(Comparator.comparing(Callable::parameterTypes));
+
+		// The types of the arguments before the caret's (which is being typed).
+		final List<String> argTypes = new ArrayList<>();
+		for (int i = 0; i < call.call.arguments.size(); i++) {
+			argTypes.add(i == call.call.active ? null : call.analysis.typeName(
+				call.call.arguments.get(i)));
+		}
+		final ClassLoader loader = loader();
+		return new SignatureHelp(Signatures.rateAll(callables, argTypes, (a,
+			p) -> Signatures.fit(a, p, loader)), 0, call.call.active);
+	}
+
+	// -- Helper methods --
+
+	/** A call around the caret, as analyzed. */
+	private static final class CallContext {
+
+		private final GroovyAnalysis analysis;
+		private final GroovyAnalysis.Call call;
+
+		private CallContext(final GroovyAnalysis analysis,
+			final GroovyAnalysis.Call call)
+		{
+			this.analysis = analysis;
+			this.call = call;
+		}
+	}
+
+	/** Analyzes the call around the caret, or returns null if none. */
+	private CallContext callContext(final String text, final int caret,
+		final String line)
+	{
 		// NB: The argument being typed, if a name, is replaced by the marker.
 		final Matcher id = IDENTIFIER.matcher(line);
 		id.find();
 		final String prefix = id.group();
-		final int start = request.offset() - prefix.length();
-		final Map<String, Class<?>> predefined = predefinedVariables(request);
-		final GroovyAnalysis analysis = analyze(ScriptDocument.of(request.text()
-			.substring(0, start), predefined, DIALECT, null), predefined, line
-				.substring(0, line.length() - prefix.length()));
-		if (analysis == null) return SignatureHelp.NONE; // string or comment
+		final int start = caret - prefix.length();
+		final Map<String, Class<?>> predefined = predefinedVariables(text);
+		final GroovyAnalysis analysis = analyze(ScriptDocument.of(text.substring(
+			0, start), predefined, DIALECT, null), predefined, line.substring(0, line
+				.length() - prefix.length()));
+		if (analysis == null) return null; // string or comment
 		final GroovyAnalysis.Call call = analysis.callAtCaret();
-		if (call == null) return SignatureHelp.NONE;
-		final List<Completion> callables = callables(analysis, call);
-		if (callables.isEmpty()) return SignatureHelp.NONE;
-		// NB: Reflection lists methods in no particular order: sort them by
-		// their parameter types, so that equally good fits come out the same.
-		callables.sort(Comparator.comparing(c -> c.parameters().stream().map(
-			p -> String.valueOf(p.type())).collect(Collectors.joining(","))));
-
-		// The types of the arguments before the caret's (which is being typed).
-		final List<String> argTypes = new ArrayList<>();
-		for (int i = 0; i < call.arguments.size(); i++) {
-			argTypes.add(i == call.active ? null : analysis.typeName(call.arguments
-				.get(i)));
-		}
-		final ClassLoader loader = loader();
-		return new SignatureHelp(Signatures.rateAll(callables, argTypes, (a,
-			p) -> Signatures.fit(a, p, loader)), call.active, Signatures.callStart(
-				request.text(), request.offset()));
+		return call == null ? null : new CallContext(analysis, call);
 	}
 
-	// -- Helper methods --
+	/**
+	 * In a call's arguments, with nothing typed yet: the variables in scope,
+	 * those fitting the parameter first (as preselected).
+	 */
+	private List<CompletionItem> argumentChoices(final String text,
+		final int caret, final String line)
+	{
+		if (Signatures.callStart(text, caret) < 0) return new ArrayList<>();
+		final CallContext call = callContext(text, caret, line);
+		if (call == null) return new ArrayList<>();
+		final Set<Class<?>> targets = new HashSet<>();
+		for (final Callable c : callables(call.analysis, call.call)) {
+			if (call.call.active >= c.params().size()) continue;
+			final String type = c.params().get(call.call.active).type();
+			final Class<?> t = type == null ? null : Types.box(GroovyAnalysis.load(
+				type, loader()));
+			if (t != null && t != Object.class) targets.add(t);
+		}
+		final Map<String, Class<?>> vars = new LinkedHashMap<>();
+		final Map<String, ClassNode> local = call.analysis.variablesAtCaret();
+		final List<String> order = new ArrayList<>(local.keySet());
+		Collections.reverse(order);
+		for (final String name : order) {
+			vars.put(name, Types.box(call.analysis.toClass(local.get(name))));
+		}
+		predefinedVariables(text).forEach(vars::putIfAbsent);
+		final List<CompletionItem> fitting = new ArrayList<>();
+		final List<CompletionItem> others = new ArrayList<>();
+		for (final Map.Entry<String, Class<?>> v : vars.entrySet()) {
+			final Class<?> c = Types.box(v.getValue());
+			final boolean fits = c != null && targets.stream().anyMatch(t -> t
+				.isAssignableFrom(c));
+			final CompletionItem item = variable(v.getKey(), c == null ? null
+				: typeName(c));
+			if (fits) {
+				item.setPreselect(fitting.isEmpty());
+				fitting.add(item);
+			}
+			else others.add(item);
+		}
+		fitting.addAll(others);
+		return fitting;
+	}
 
 	/**
 	 * Analyzes the script up to the caret. If it does not parse (e.g. due to a
@@ -236,8 +309,8 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 		return lineCode == null ? analysis : GroovyAnalysis.of(lineCode, loader());
 	}
 
-	private List<Completion> memberCompletions(final GroovyAnalysis analysis,
-		final String before, final String prefix)
+	private List<CompletionItem> memberCompletions(
+		final GroovyAnalysis analysis, final String before, final String prefix)
 	{
 		final Expression receiver = analysis.receiverAtCaret();
 		final ClassNode type = GroovyAnalysis.typeOf(receiver);
@@ -245,113 +318,118 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 			// Perhaps a package name, e.g. "java.util."
 			final Matcher q = QUALIFIER.matcher(before);
 			if (q.find()) return packageMemberCompletions(q.group(1), prefix);
-			return Collections.emptyList();
+			return new ArrayList<>();
 		}
 		final boolean staticOnly = receiver instanceof ClassExpression;
 		if (type.redirect().isPrimaryClassNode()) {
 			return scriptClassMembers(analysis, type.redirect(), prefix, staticOnly);
 		}
 		final Class<?> c = Types.box(analysis.toClass(type));
-		if (c == null) return Collections.emptyList();
-		final List<Completion> out = sorted(Completions.membersOf(c, prefix,
+		if (c == null) return new ArrayList<>();
+		final List<CompletionItem> out = sorted(Members.of(c, prefix,
 			staticOnly));
-		if (!staticOnly) out.addAll(gdkCompletions(c, prefix));
+		if (!staticOnly) {
+			for (final Callable m : gdkMethods(c, prefix)) out.add(m.toItem());
+		}
 		return out;
 	}
 
 	/** Members of a class defined in the script itself. */
-	private List<Completion> scriptClassMembers(final GroovyAnalysis analysis,
-		final ClassNode type, final String prefix, final boolean staticOnly)
+	private List<CompletionItem> scriptClassMembers(
+		final GroovyAnalysis analysis, final ClassNode type, final String prefix,
+		final boolean staticOnly)
 	{
-		final List<Completion> out = new ArrayList<>();
+		final List<CompletionItem> out = new ArrayList<>();
 		for (final PropertyNode p : type.getProperties()) {
 			if (staticOnly && !p.isStatic() || !matches(p.getName(), prefix)) {
 				continue;
 			}
-			out.add(Completion.builder(p.getName()).kind(Completion.Kind.FIELD)
-				.returnType(p.getType().toString(false)).summary(p.getType().toString(
-					false) + " " + p.getName()).build());
+			out.add(field(p.getName(), p.getType().toString(false)));
 		}
 		for (final FieldNode f : type.getFields()) {
 			if (!f.isPublic() || f.isSynthetic() || staticOnly && !f.isStatic() ||
 				!matches(f.getName(), prefix) || type.getProperty(f
 					.getName()) != null) continue;
-			out.add(Completion.builder(f.getName()).kind(Completion.Kind.FIELD)
-				.returnType(f.getType().toString(false)).build());
+			out.add(field(f.getName(), f.getType().toString(false)));
 		}
-		for (final MethodNode m : type.getMethods()) {
-			if (!m.isPublic() || m.isSynthetic() || staticOnly && !m.isStatic() ||
-				!matches(m.getName(), prefix) || m.getName().contains("$")) continue;
-			final List<Completion.Parameter> params = new ArrayList<>();
-			for (final org.codehaus.groovy.ast.Parameter p : m.getParameters()) {
-				params.add(new Completion.Parameter(p.getName(), p.getType()
-					.toString(false)));
-			}
-			out.add(Completion.builder(m.getName()).kind(Completion.Kind.METHOD)
-				.parameters(params).returnType(m.getReturnType().toString(false))
-				.summary(m.getTypeDescriptor()).build());
+		for (final Callable m : scriptMethods(type, prefix, staticOnly, false)) {
+			out.add(m.toItem());
 		}
-		final List<Completion> sorted = sorted(out);
+		final List<CompletionItem> sorted = sorted(out);
 		// Plus what it inherits from (compiled) superclasses.
 		final Class<?> superclass = analysis.toClass(type.getSuperClass());
 		if (superclass != null && superclass != Object.class) {
-			sorted.addAll(sorted(Completions.membersOf(superclass, prefix,
-				staticOnly)));
+			sorted.addAll(sorted(Members.of(superclass, prefix, staticOnly)));
 		}
 		return sorted;
 	}
 
-	/** Classes and subpackages of a package, e.g. after "java.util." */
-	private List<Completion> packageMemberCompletions(final String qualifier,
-		final String prefix)
+	/** Methods of a class defined in the script: by prefix, or exact name. */
+	private static List<Callable> scriptMethods(final ClassNode type,
+		final String name, final boolean staticOnly, final boolean exact)
 	{
-		if (!ClassIndex.isCacheReady()) return Collections.emptyList();
+		final List<Callable> out = new ArrayList<>();
+		for (final MethodNode m : type.getMethods()) {
+			if (!m.isPublic() || m.isSynthetic() || staticOnly && !m.isStatic() || m
+				.getName().contains("$")) continue;
+			if (exact ? !m.getName().equals(name) : !matches(m.getName(), name)) {
+				continue;
+			}
+			out.add(methodNode(m.getName(), m).detail(m.getTypeDescriptor()));
+		}
+		return out;
+	}
+
+	/** Classes and subpackages of a package, e.g. after "java.util." */
+	private static List<CompletionItem> packageMemberCompletions(
+		final String qualifier, final String prefix)
+	{
+		if (!ClassIndex.isCacheReady()) return new ArrayList<>();
 		final String pkg = qualifier.substring(0, qualifier.length() - 1);
 		return ClassIndex.findClassNamesForPackage(pkg) //
 			.filter(s -> s.lastIndexOf('.') == pkg.length()) //
 			.map(s -> s.substring(pkg.length() + 1)) //
 			.filter(s -> matches(s, prefix) && !s.contains("$")) //
 			.sorted().limit(MAX_CLASSES) //
-			.map(s -> Completion.builder(s).kind(Completion.Kind.CLASS).summary(
-				pkg + "." + s).build()) //
+			.map(s -> item(s, CompletionItemKind.Class, pkg + "." + s)) //
 			.collect(Collectors.toList());
 	}
 
 	/**
 	 * The GDK methods Groovy adds to {@code c}, e.g. {@code each} and
-	 * {@code collect} for collections.
+	 * {@code collect} for collections; by prefix.
 	 */
-	private static List<Completion> gdkCompletions(final Class<?> c,
+	private static List<Callable> gdkMethods(final Class<?> c,
 		final String prefix)
 	{
-		final Map<String, Completion> out = new LinkedHashMap<>();
+		final Map<String, Callable> out = new LinkedHashMap<>();
 		for (final MetaMethod m : GroovySystem.getMetaClassRegistry()
 			.getMetaClass(c).getMetaMethods())
 		{
 			if (m.isStatic() || !matches(m.getName(), prefix)) continue;
-			final List<Completion.Parameter> params = new ArrayList<>();
+			final List<Callable.Param> params = new ArrayList<>();
 			final Class<?>[] types = m.getNativeParameterTypes();
 			for (int i = 0; i < types.length; i++) {
-				params.add(new Completion.Parameter("arg" + i, typeName(types[i])));
+				params.add(new Callable.Param("arg" + i, typeName(types[i])));
 			}
 			final String signature = typeName(m.getReturnType()) + " " + m
-				.getName() + params.stream().map(Completion.Parameter::type).collect(
+				.getName() + params.stream().map(Callable.Param::type).collect(
 					Collectors.joining(", ", "(", ")"));
 			// NB: Groovy lists some methods more than once.
-			out.putIfAbsent(signature, Completion.builder(m.getName()).kind(
-				Completion.Kind.METHOD).parameters(params).returnType(typeName(m
-					.getReturnType())).declaringClass(m.getDeclaringClass().getName())
-				.summary("GDK: " + signature).build());
+			out.putIfAbsent(signature, new Callable(m.getName(), params, typeName(m
+				.getReturnType())).detail("GDK: " + signature));
 		}
-		return sorted(new ArrayList<>(out.values()));
+		final List<Callable> sorted = new ArrayList<>(out.values());
+		sorted.sort(Comparator.comparing(m -> m.name().toLowerCase(Locale.ROOT)));
+		return sorted;
 	}
 
-	private static List<Completion> variableCompletions(
+	private static List<CompletionItem> variableCompletions(
 		final Map<String, ClassNode> vars, final Map<String, String> predefined,
 		final String prefix)
 	{
 		final Set<String> names = new HashSet<>();
-		final List<Completion> out = new ArrayList<>();
+		final List<CompletionItem> out = new ArrayList<>();
 		// Innermost (most recently declared) variables first.
 		final List<String> order = new ArrayList<>(vars.keySet());
 		Collections.reverse(order);
@@ -361,57 +439,58 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 				continue;
 			}
 			final ClassNode type = vars.get(name);
-			final String typeName = type != null ? type.toString(false) : predefined
-				.get(name);
-			out.add(Completion.builder(name).kind(Completion.Kind.VARIABLE).summary(
-				typeName == null ? name : typeName + " " + name).build());
+			out.add(variable(name, type != null ? type.toString(false) : predefined
+				.get(name)));
 		}
 		return out;
 	}
 
-	private static List<Completion> keywordCompletions(final String prefix) {
+	private static List<CompletionItem> keywordCompletions(final String prefix) {
 		return KEYWORDS.stream().filter(k -> k.startsWith(prefix) && !k.equals(
-			prefix)).map(k -> Completion.builder(k).kind(Completion.Kind.KEYWORD)
-				.build()).collect(Collectors.toList());
+			prefix)).map(k -> item(k, CompletionItemKind.Keyword, null)).collect(
+				Collectors.toList());
 	}
 
 	/** Class names starting with the prefix, imported on acceptance. */
-	private static List<Completion> classCompletions(final String text,
+	private static List<CompletionItem> classCompletions(final Document doc,
 		final String prefix)
 	{
 		if (!Character.isUpperCase(prefix.charAt(0)) || !ClassIndex
-			.isCacheReady()) return Collections.emptyList();
+			.isCacheReady()) return new ArrayList<>();
 		final List<String> classNames = ClassIndex.findSimpleClassNamesStartingWith(
 			prefix);
 		// Closest matches first: shortest simple name, then alphabetical.
 		classNames.sort(Comparator.comparingInt((String cn) -> cn.length() - cn
 			.lastIndexOf('.')).thenComparing(Comparator.naturalOrder()));
-		final List<Completion> out = new ArrayList<>();
+		final List<CompletionItem> out = new ArrayList<>();
 		for (final String className : classNames) {
 			if (className.contains("$")) continue;
 			final String simpleName = className.substring(className.lastIndexOf(
 				'.') + 1);
-			final Completion.Builder b = Completion.builder(simpleName).kind(
-				Completion.Kind.CLASS).summary(className);
-			final TextEdit edit = importEdit(text, className);
-			if (edit != null) b.additionalEdits(Collections.singletonList(edit));
-			out.add(b.build());
+			final CompletionItem item = item(simpleName, CompletionItemKind.Class,
+				className);
+			final int at = importOffset(doc.text(), className);
+			if (at >= 0) {
+				item.setAdditionalTextEdits(Collections.singletonList(insert(doc, at,
+					"import " + className + "\n")));
+			}
+			out.add(item);
 			if (out.size() >= MAX_CLASSES) break;
 		}
 		return out;
 	}
 
 	/**
-	 * An edit importing the given class, after the script's last import (or at
-	 * the top), or null if no import is needed.
+	 * Where to import the given class: after the script's last import (or at
+	 * the top); or -1 if no import is needed.
 	 */
-	static TextEdit importEdit(final String text, final String className) {
+	static int importOffset(final String text, final String className) {
 		final String pkg = className.substring(0, Math.max(0, className
 			.lastIndexOf('.')));
 		if (DEFAULT_IMPORTS.contains(pkg) || className.equals(
 			"java.math.BigDecimal") || className.equals("java.math.BigInteger"))
 		{
-			return null;
+			return -1;
 		}
 		final Pattern imports = Pattern.compile("^\\s*import\\s+(?:static\\s+)?" +
 			"([\\w$.]+?)(\\.\\*)?\\s*(?:as\\s+\\w+\\s*)?;?\\s*$", Pattern.MULTILINE);
@@ -420,69 +499,35 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 		while (m.find()) {
 			final String imported = m.group(1);
 			if (imported.equals(className) || m.group(2) != null && imported.equals(
-				pkg)) return null;
+				pkg)) return -1;
 			insertAt = m.end() + 1;
 		}
 		if (insertAt == 0 && text.startsWith("#!")) {
 			insertAt = text.indexOf('\n') + 1; // NB: After the shebang.
 		}
-		insertAt = Math.min(insertAt, text.length());
-		return TextEdit.insert(insertAt, "import " + className + "\n");
+		return Math.min(insertAt, text.length());
 	}
 
-	private static List<Completion> importCompletions(final String token) {
+	private static List<CompletionItem> importCompletions(final String token) {
 		if (token.isEmpty() || !ClassIndex.isCacheReady()) {
-			return Collections.emptyList();
+			return new ArrayList<>();
 		}
 		return ClassIndex.findClassNamesStartingWith(token) //
 			.filter(s -> !s.contains("$")) //
 			.sorted().limit(MAX_CLASSES) //
-			.map(s -> Completion.builder(s).kind(Completion.Kind.IMPORT).build()) //
+			.map(s -> item(s, CompletionItemKind.Module, null)) //
 			.collect(Collectors.toList());
 	}
 
-	/** Suggests in-scope variables whose type suits a parameter. */
-	private ParameterChoices choices(final GroovyAnalysis analysis,
-		final Map<String, String> predefined)
-	{
-		return parameter -> {
-			final Class<?> target = Types.box(GroovyAnalysis.load(parameter.type(),
-				loader()));
-			if (target == null || target == Object.class) {
-				return Collections.emptyList();
-			}
-			final Map<String, ClassNode> vars = analysis.variablesAtCaret();
-			final List<Completion> out = new ArrayList<>();
-			for (final Map.Entry<String, ClassNode> var : vars.entrySet()) {
-				final Class<?> c = Types.box(analysis.toClass(var.getValue()));
-				if (c != null && target.isAssignableFrom(c)) {
-					out.add(Completion.of(var.getKey()));
-				}
-			}
-			for (final Map.Entry<String, String> var : predefined.entrySet()) {
-				if (vars.containsKey(var.getKey())) continue;
-				final Class<?> c = Types.box(GroovyAnalysis.load(var.getValue(), loader()));
-				if (c != null && target.isAssignableFrom(c)) {
-					out.add(Completion.of(var.getKey()));
-				}
-			}
-			return out;
-		};
-	}
-
 	/** The signatures the call may be calling: methods or constructors. */
-	private List<Completion> callables(final GroovyAnalysis analysis,
+	private List<Callable> callables(final GroovyAnalysis analysis,
 		final GroovyAnalysis.Call call)
 	{
-		final List<Completion> out = new ArrayList<>();
+		final List<Callable> out = new ArrayList<>();
 		if (call.expression instanceof ConstructorCallExpression) {
 			final ClassNode type = call.expression.getType().redirect();
 			final Class<?> c = analysis.toClass(type);
-			if (c != null) {
-				for (final Constructor<?> ctor : c.getConstructors()) {
-					out.add(constructor(ctor));
-				}
-			}
+			if (c != null) out.addAll(Members.constructors(c));
 			else if (type.isPrimaryClassNode()) {
 				for (final ConstructorNode ctor : type.getDeclaredConstructors()) {
 					out.add(methodNode(type.getNameWithoutPackage(), ctor));
@@ -493,8 +538,8 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 		if (call.expression instanceof StaticMethodCallExpression) {
 			final StaticMethodCallExpression e =
 				(StaticMethodCallExpression) call.expression;
-			return named(Completions.membersOf(analysis.toClass(e.getOwnerType()),
-				e.getMethod(), true), e.getMethod());
+			return Members.methods(analysis.toClass(e.getOwnerType()), e.getMethod(),
+				true);
 		}
 		final MethodCallExpression e = (MethodCallExpression) call.expression;
 		final String name = e.getMethodAsString();
@@ -504,7 +549,7 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 			for (final MethodNode m : analysis.scriptMethods(name)) {
 				out.add(methodNode(name, m));
 			}
-			out.addAll(named(gdkCompletions(Object.class, name), name));
+			out.addAll(named(gdkMethods(Object.class, name), name));
 			return out;
 		}
 		final Expression receiver = e.getObjectExpression();
@@ -512,71 +557,75 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 		if (type == null) return out;
 		final boolean staticOnly = receiver instanceof ClassExpression;
 		if (type.redirect().isPrimaryClassNode()) {
-			return named(scriptClassMembers(analysis, type.redirect(), name,
-				staticOnly), name);
+			return scriptMethods(type.redirect(), name, staticOnly, true);
 		}
 		final Class<?> c = Types.box(analysis.toClass(type));
 		if (c == null) return out;
-		out.addAll(named(Completions.membersOf(c, name, staticOnly), name));
-		if (!staticOnly) out.addAll(named(gdkCompletions(c, name), name));
+		out.addAll(Members.methods(c, name, staticOnly));
+		if (!staticOnly) out.addAll(named(gdkMethods(c, name), name));
 		return out;
 	}
 
-	/** The callables among {@code completions} with exactly the given name. */
-	private static List<Completion> named(final List<Completion> completions,
+	/** The callables with exactly the given name. */
+	private static List<Callable> named(final List<Callable> callables,
 		final String name)
 	{
-		final List<Completion> out = new ArrayList<>();
-		for (final Completion c : completions) {
-			if (c.kind() == Completion.Kind.METHOD && c.insertionText().equals(
-				name)) out.add(c);
-		}
-		return out;
-	}
-
-	private static Completion constructor(final Constructor<?> ctor) {
-		final List<Completion.Parameter> params = new ArrayList<>();
-		for (final java.lang.reflect.Parameter p : ctor.getParameters()) {
-			params.add(new Completion.Parameter(p.getName(), typeName(p
-				.getType())));
-		}
-		return Completion.builder(ctor.getDeclaringClass().getSimpleName()).kind(
-			Completion.Kind.METHOD).parameters(params).returnType(typeName(ctor
-				.getDeclaringClass())).build();
+		return callables.stream().filter(c -> c.name().equals(name)).collect(
+			Collectors.toList());
 	}
 
 	/** A callable defined in the script itself. */
-	private static Completion methodNode(final String name, final MethodNode m) {
-		final List<Completion.Parameter> params = new ArrayList<>();
+	private static Callable methodNode(final String name, final MethodNode m) {
+		final List<Callable.Param> params = new ArrayList<>();
 		for (final org.codehaus.groovy.ast.Parameter p : m.getParameters()) {
-			params.add(new Completion.Parameter(p.getName(), p.isDynamicTyped()
-				? null : p.getType().getName()));
+			params.add(new Callable.Param(p.getName(), p.isDynamicTyped() ? null : p
+				.getType().getName()));
 		}
-		return Completion.builder(name).kind(Completion.Kind.METHOD).parameters(
-			params).returnType(m.getReturnType().toString(false)).build();
+		return new Callable(name, params, m.getReturnType().toString(false));
+	}
+
+	private static CompletionItem item(final String text,
+		final CompletionItemKind kind, final String detail)
+	{
+		final CompletionItem item = new CompletionItem(text);
+		item.setKind(kind);
+		item.setInsertText(text);
+		item.setDetail(detail);
+		return item;
+	}
+
+	private static CompletionItem variable(final String name,
+		final String type)
+	{
+		return item(name, CompletionItemKind.Variable, type == null ? name : type +
+			" " + name);
+	}
+
+	private static CompletionItem field(final String name, final String type) {
+		final CompletionItem item = item(name, CompletionItemKind.Field, type +
+			" " + name);
+		final CompletionItemLabelDetails details = new CompletionItemLabelDetails();
+		details.setDescription(type);
+		item.setLabelDetails(details);
+		return item;
 	}
 
 	/**
 	 * Gets the variables defined before the script runs: its parameters (e.g.
-	 * {@code #@ String name}) and, in a live interpreter, the engine's bindings.
+	 * {@code #@ String name}) and, in a live interpreter, its bindings.
 	 *
 	 * @return Map of variable name to type.
 	 */
-	private Map<String, Class<?>> predefinedVariables(
-		final CompletionRequest request)
-	{
+	private Map<String, Class<?>> predefinedVariables(final String text) {
 		final Map<String, Class<?>> vars = new LinkedHashMap<>();
-		final Context context = getContext();
-		final CodeCompletionService service = context == null ? null : context
-			.getService(CodeCompletionService.class);
-		if (service != null) {
-			service.scriptParameters(request.text()).forEach((name, type) -> {
+		if (completion != null) {
+			completion.scriptParameters(text).forEach((name, type) -> {
 				if (isIdentifier(name)) vars.put(name, type);
 			});
 		}
-		final ScriptContext scriptContext = request.context();
-		final Bindings bindings = scriptContext == null ? null : scriptContext
-			.getBindings(ScriptContext.ENGINE_SCOPE);
+		final ScriptContext live = environment().live();
+		final Bindings bindings = live == null ? null : live.getBindings(
+			ScriptContext.ENGINE_SCOPE);
 		if (bindings != null) {
 			for (final Map.Entry<String, Object> entry : bindings.entrySet()) {
 				final String name = entry.getKey();
@@ -591,7 +640,7 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 
 	private static ClassLoader loader() {
 		final ClassLoader loader = Thread.currentThread().getContextClassLoader();
-		return loader != null ? loader : GroovyCodeCompleter.class
+		return loader != null ? loader : GroovyLanguageServer.class
 			.getClassLoader();
 	}
 
@@ -610,27 +659,23 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 	}
 
 	/** Sorts completions by name, case-insensitively (stably). */
-	private static List<Completion> sorted(final List<Completion> completions) {
-		final List<Completion> out = new ArrayList<>(completions);
-		out.sort(Comparator.comparing(c -> c.insertionText().toLowerCase(
+	private static List<CompletionItem> sorted(
+		final List<CompletionItem> items)
+	{
+		final List<CompletionItem> out = new ArrayList<>(items);
+		out.sort(Comparator.comparing(c -> c.getLabel().toLowerCase(
 			Locale.ROOT)));
 		return out;
 	}
 
 	/**
-	 * Gets the name by which Groovy code can refer to a class, e.g.
+	 * Gets the name by which Groovy code refers to a class, e.g.
 	 * {@code java.util.List} or {@code int[]}; or {@code Object} if it has none
 	 * (e.g. an anonymous class).
 	 */
-	/** Gets the name by which Groovy code refers to {@code c}. */
 	static String typeName(final Class<?> c) {
 		final String name = c == null ? null : c.getCanonicalName();
 		return name == null ? "Object" : name;
-	}
-
-	@Override
-	public ScriptDialect dialect() {
-		return DIALECT;
 	}
 
 	/**
@@ -652,5 +697,11 @@ public class GroovyCodeCompleter extends AbstractCodeCompleterPlugin {
 			if (!Modifier.isPublic(t.getModifiers())) return false;
 		}
 		return !c.isAnonymousClass() && !c.isLocalClass();
+	}
+
+	/** An edit importing a class (for tests). */
+	static TextEdit importEdit(final Document doc, final String className) {
+		final int at = importOffset(doc.text(), className);
+		return at < 0 ? null : insert(doc, at, "import " + className + "\n");
 	}
 }

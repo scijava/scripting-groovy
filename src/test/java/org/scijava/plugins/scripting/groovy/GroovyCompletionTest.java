@@ -36,39 +36,53 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import javax.script.ScriptEngine;
 
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionList;
+import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DidCloseTextDocumentParams;
+import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.SignatureHelpParams;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.TextDocumentItem;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.scijava.Context;
 import org.scijava.code.api.ClassIndex;
 import org.scijava.code.api.CodeCompletionService;
-import org.scijava.code.api.Completion;
-import org.scijava.code.api.CompletionRequest;
-import org.scijava.code.api.CompletionResult;
-import org.scijava.code.api.SignatureHelp;
+import org.scijava.code.lsp.LanguageServerService;
+import org.scijava.code.lsp.LspClient;
+import org.scijava.code.lsp.MergedLanguageServer;
+import org.scijava.code.lsp.RatedSignatureInformation;
 import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
 
 /**
- * Tests {@link GroovyCodeCompleter}.
+ * Tests {@link GroovyLanguageServer}, through the
+ * {@link LanguageServerService}, as editors use it.
  *
  * @author Gabriel Selzer
  */
 public class GroovyCompletionTest {
 
+	private static final String URI = "untitled:/test.groovy";
+
 	private Context context;
 	private ScriptLanguage groovy;
-	private CodeCompletionService service;
+	private LanguageServerService servers;
 
 	@Before
 	public void setUp() {
-		context = new Context(ScriptService.class, CodeCompletionService.class);
+		context = new Context(ScriptService.class, CodeCompletionService.class,
+			LanguageServerService.class);
 		groovy = context.service(ScriptService.class).getLanguageByName("Groovy");
-		service = context.service(CodeCompletionService.class);
+		servers = context.service(LanguageServerService.class);
 	}
 
 	@After
@@ -77,9 +91,11 @@ public class GroovyCompletionTest {
 	}
 
 	@Test
-	public void testCompleterIsDiscovered() {
-		assertTrue(service.getCompleterPlugin(
-			groovy) instanceof GroovyCodeCompleter);
+	public void testServerIsDiscovered() {
+		assertTrue(servers.supports(groovy));
+		// NB: Groovy's code-api completer is gone.
+		assertNull(context.service(CodeCompletionService.class)
+			.getCompleterPlugin(groovy));
 	}
 
 	@Test
@@ -97,6 +113,24 @@ public class GroovyCompletionTest {
 		// Inherited members are included.
 		assertTrue(complete("def x = new ArrayList()\nx.containsA").contains(
 			"containsAll"));
+	}
+
+	@Test
+	public void testCallablesAreSnippets() {
+		final CompletionItem upper = items("def s = 'x'\ns.toUpp").stream().filter(
+			c -> c.getLabelDetails() != null && "()".equals(c.getLabelDetails()
+				.getDetail())).findFirst().orElse(null);
+		assertTrue(upper != null);
+		assertEquals("toUpperCase()", upper.getTextEdit().getLeft().getNewText());
+		final CompletionItem locale = items("def s = 'x'\ns.toUpp").stream().filter(
+			c -> "(java.util.Locale arg0)".equals(c.getLabelDetails().getDetail()) ||
+				c.getLabelDetails().getDetail().startsWith("(java.util.Locale "))
+			.findFirst().orElse(null);
+		assertTrue(locale != null);
+		assertTrue(locale.getTextEdit().getLeft().getNewText().startsWith(
+			"toUpperCase(${1:"));
+		assertEquals("java.lang.String", locale.getLabelDetails()
+			.getDescription());
 	}
 
 	@Test
@@ -125,9 +159,9 @@ public class GroovyCompletionTest {
 		assertTrue(complete("[1, 2, 3].coll").contains("collect"));
 		assertTrue(complete("def s = 'abc'\ns.rev").contains("reverse"));
 		assertTrue(complete("new File('x').eachL").contains("eachLine"));
-		final Completion each = completions("[1, 2, 3].eac").stream().filter(
-			c -> c.insertionText().equals("each")).findFirst().orElse(null);
-		assertTrue(each != null && each.summary().startsWith("GDK"));
+		final CompletionItem each = items("[1, 2, 3].eac").stream().filter(
+			c -> c.getLabel().equals("each")).findFirst().orElse(null);
+		assertTrue(each != null && each.getDetail().startsWith("GDK"));
 	}
 
 	@Test
@@ -181,23 +215,23 @@ public class GroovyCompletionTest {
 	@Test
 	public void testClassNamesWithAutoImport() {
 		ClassIndex.ensureCache();
-		final Completion atomic = completions("def a = new AtomicInt").stream()
-			.filter(c -> c.insertionText().equals("AtomicInteger")).findFirst()
-			.orElse(null);
-		assertTrue(atomic != null);
-		assertEquals(1, atomic.additionalEdits().size());
-		assertEquals("import java.util.concurrent.atomic.AtomicInteger\n", atomic
-			.additionalEdits().get(0).newText());
-		// Already imported (or imported by default): no edit.
-		final Completion list = completions("def a = new ArrayLis").stream()
-			.filter(c -> c.insertionText().equals("ArrayList")).findFirst().orElse(
+		final CompletionItem atomic = items("def a = new AtomicInt").stream()
+			.filter(c -> c.getLabel().equals("AtomicInteger")).findFirst().orElse(
 				null);
-		assertTrue(list != null && list.additionalEdits().isEmpty());
-		assertNull(GroovyCodeCompleter.importEdit(
-			"import java.util.concurrent.atomic.*\n", "java.util.concurrent.atomic.AtomicInteger"));
+		assertTrue(atomic != null);
+		assertEquals(1, atomic.getAdditionalTextEdits().size());
+		assertEquals("import java.util.concurrent.atomic.AtomicInteger\n", atomic
+			.getAdditionalTextEdits().get(0).getNewText());
+		// Already imported (or imported by default): no edit.
+		final CompletionItem list = items("def a = new ArrayLis").stream().filter(
+			c -> c.getLabel().equals("ArrayList")).findFirst().orElse(null);
+		assertTrue(list != null && list.getAdditionalTextEdits() == null);
+		assertEquals(-1, GroovyLanguageServer.importOffset(
+			"import java.util.concurrent.atomic.*\n",
+			"java.util.concurrent.atomic.AtomicInteger"));
 		// Inserted after the last import.
-		assertEquals(20, GroovyCodeCompleter.importEdit("import java.io.File\n" +
-			"x = 1\n", "java.util.concurrent.atomic.AtomicInteger").start());
+		assertEquals(20, GroovyLanguageServer.importOffset("import java.io.File\n" +
+			"x = 1\n", "java.util.concurrent.atomic.AtomicInteger"));
 	}
 
 	@Test
@@ -220,10 +254,8 @@ public class GroovyCompletionTest {
 	public void testInterpreterBindings() throws Exception {
 		final ScriptEngine engine = groovy.getScriptEngine();
 		engine.put("injected", new ArrayList<String>());
-		final String code = "injected.si";
-		final List<String> texts = service.complete(new CompletionRequest(code,
-			code.length(), groovy, engine, engine.getContext())).completions()
-			.stream().map(Completion::insertionText).collect(Collectors.toList());
+		final List<String> texts = labels(items(servers.server(groovy, engine
+			.getContext()), "injected.si"));
 		assertTrue(texts.toString(), texts.contains("size"));
 	}
 
@@ -232,7 +264,7 @@ public class GroovyCompletionTest {
 		// A decimal (a BigDecimal) fits the floating-point overloads, which come
 		// first; the integral ones do not. The caret is in the second argument.
 		final SignatureHelp max = help("Math.max(1.5, ");
-		assertEquals(1, max.activeParameter());
+		assertEquals(Integer.valueOf(1), max.getActiveParameter());
 		assertEquals("[double:MATCH, float:MATCH, int:MISMATCH, long:MISMATCH]",
 			describe(max));
 		// An integer fits the integral overloads, and converts to the others.
@@ -252,41 +284,92 @@ public class GroovyCompletionTest {
 			"area(3, ");
 		assertEquals("[int:MATCH]", describe(area));
 		// The innermost call, and none outside calls.
-		assertEquals(0, help("Math.max(Math.abs(").activeParameter());
-		assertTrue(help("def x = 1").isEmpty());
-	}
-
-	private SignatureHelp help(final String code) {
-		return service.getCompleter(groovy).signatureHelp(new CompletionRequest(
-			code, groovy, null));
-	}
-
-	/** Each signature's first parameter type and fit, in order. */
-	private static String describe(final SignatureHelp help) {
-		return help.signatures().stream().map(s -> (s.callable().parameters()
-			.isEmpty() ? "()" : s.callable().parameters().get(0).type()) + ":" + s
-				.fit()).collect(Collectors.toList()).toString();
+		assertEquals(Integer.valueOf(0), help("Math.max(Math.abs(")
+			.getActiveParameter());
+		assertNull(help("def x = 1"));
 	}
 
 	@Test
-	public void testParameterChoices() {
-		final CompletionResult result = service.complete(new CompletionRequest(
-			"def a = new ArrayList()\ndef s = 'x'\nCollections.so", groovy, null));
-		final List<String> choices = result.parameterChoices().choicesFor(
-			new Completion.Parameter("list", "java.util.List")).stream().map(
-				Completion::insertionText).collect(Collectors.toList());
-		assertEquals("[a]", choices.toString());
+	public void testArgumentChoices() {
+		// In a call's arguments: the variables fitting the parameter first.
+		final List<CompletionItem> items = items(
+			"def a = new ArrayList()\ndef s = 'x'\nCollections.sort(");
+		assertEquals("a", items.get(0).getLabel());
+		assertEquals(Boolean.TRUE, items.get(0).getPreselect());
+		assertTrue(labels(items).contains("s"));
 	}
 
 	// -- Helper methods --
 
-	private List<Completion> completions(final String code) {
-		return service.complete(new CompletionRequest(code, groovy, null))
-			.completions();
+	private SignatureHelp help(final String code) {
+		final MergedLanguageServer server = servers.server(groovy);
+		open(server, code);
+		try {
+			return server.signatureHelp(new SignatureHelpParams(
+				new TextDocumentIdentifier(URI), LspClient.position(code, code
+					.length()))).get(30, TimeUnit.SECONDS);
+		}
+		catch (final Exception exc) {
+			throw new RuntimeException(exc);
+		}
+		finally {
+			close(server);
+		}
+	}
+
+	/** Each signature's first parameter type and fit, in order. */
+	private static String describe(final SignatureHelp help) {
+		return help.getSignatures().stream().map(s -> {
+			final String first = s.getParameters().isEmpty() ? "()" : s
+				.getParameters().get(0).getLabel().getLeft();
+			final String type = first.contains(" ") ? first.substring(0, first
+				.lastIndexOf(' ')) : first;
+			return type + ":" + RatedSignatureInformation.fitOf(s);
+		}).collect(Collectors.toList()).toString();
+	}
+
+	private List<CompletionItem> items(final String code) {
+		return items(servers.server(groovy), code);
+	}
+
+	private static List<CompletionItem> items(final MergedLanguageServer server,
+		final String code)
+	{
+		open(server, code);
+		try {
+			final CompletionList list = server.completion(new CompletionParams(
+				new TextDocumentIdentifier(URI), LspClient.position(code, code
+					.length()))).get(30, TimeUnit.SECONDS).getRight();
+			final List<CompletionItem> items = new ArrayList<>(list.getItems());
+			items.sort((a, b) -> a.getSortText().compareTo(b.getSortText()));
+			return items;
+		}
+		catch (final Exception exc) {
+			throw new RuntimeException(exc);
+		}
+		finally {
+			close(server);
+		}
 	}
 
 	private List<String> complete(final String code) {
-		return completions(code).stream().map(Completion::insertionText).collect(
-			Collectors.toList());
+		return labels(items(code));
+	}
+
+	private static List<String> labels(final List<CompletionItem> items) {
+		return items.stream().map(CompletionItem::getLabel).collect(Collectors
+			.toList());
+	}
+
+	private static void open(final MergedLanguageServer server,
+		final String code)
+	{
+		server.didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(URI,
+			"groovy", 1, code)));
+	}
+
+	private static void close(final MergedLanguageServer server) {
+		server.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(
+			URI)));
 	}
 }
