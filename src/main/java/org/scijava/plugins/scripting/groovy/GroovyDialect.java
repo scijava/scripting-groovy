@@ -43,7 +43,7 @@ class GroovyDialect implements ScriptDialect {
 
 	@Override
 	public String runtimeType(final Class<?> type) {
-		return GroovyCodeCompleter.typeName(type);
+		return GroovyLanguageServer.typeName(type);
 	}
 
 	@Override
