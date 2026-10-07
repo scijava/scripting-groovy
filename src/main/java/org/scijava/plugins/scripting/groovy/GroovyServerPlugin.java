@@ -31,7 +31,7 @@ package org.scijava.plugins.scripting.groovy;
 
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.scijava.Priority;
-import org.scijava.code.api.CodeCompletionService;
+import org.scijava.code.lsp.LanguageServerService;
 import org.scijava.code.lsp.Environment;
 import org.scijava.code.lsp.LanguageServerPlugin;
 import org.scijava.plugin.Parameter;
@@ -49,7 +49,7 @@ import org.scijava.script.ScriptLanguage;
 public class GroovyServerPlugin implements LanguageServerPlugin {
 
 	@Parameter(required = false)
-	private CodeCompletionService completion;
+	private LanguageServerService servers;
 
 	@Override
 	public boolean supports(final ScriptLanguage language) {
@@ -58,6 +58,6 @@ public class GroovyServerPlugin implements LanguageServerPlugin {
 
 	@Override
 	public LanguageServer create(final Environment environment) {
-		return new GroovyLanguageServer(completion, environment);
+		return new GroovyLanguageServer(servers, environment);
 	}
 }

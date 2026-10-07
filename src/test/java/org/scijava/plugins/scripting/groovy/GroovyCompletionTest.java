@@ -54,10 +54,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.scijava.Context;
-import org.scijava.code.api.ClassIndex;
-import org.scijava.code.api.CodeCompletionService;
+import org.scijava.code.lsp.ClassIndex;
 import org.scijava.code.lsp.LanguageServerService;
-import org.scijava.code.lsp.LspClient;
+import org.scijava.code.lsp.Positions;
 import org.scijava.code.lsp.MergedLanguageServer;
 import org.scijava.code.lsp.RatedSignatureInformation;
 import org.scijava.script.ScriptLanguage;
@@ -79,8 +78,7 @@ public class GroovyCompletionTest {
 
 	@Before
 	public void setUp() {
-		context = new Context(ScriptService.class, CodeCompletionService.class,
-			LanguageServerService.class);
+		context = new Context(ScriptService.class, LanguageServerService.class);
 		groovy = context.service(ScriptService.class).getLanguageByName("Groovy");
 		servers = context.service(LanguageServerService.class);
 	}
@@ -93,9 +91,6 @@ public class GroovyCompletionTest {
 	@Test
 	public void testServerIsDiscovered() {
 		assertTrue(servers.supports(groovy));
-		// NB: Groovy's code-api completer is gone.
-		assertNull(context.service(CodeCompletionService.class)
-			.getCompleterPlugin(groovy));
 	}
 
 	@Test
@@ -306,7 +301,7 @@ public class GroovyCompletionTest {
 		open(server, code);
 		try {
 			return server.signatureHelp(new SignatureHelpParams(
-				new TextDocumentIdentifier(URI), LspClient.position(code, code
+				new TextDocumentIdentifier(URI), Positions.position(code, code
 					.length()))).get(30, TimeUnit.SECONDS);
 		}
 		catch (final Exception exc) {
@@ -338,7 +333,7 @@ public class GroovyCompletionTest {
 		open(server, code);
 		try {
 			final CompletionList list = server.completion(new CompletionParams(
-				new TextDocumentIdentifier(URI), LspClient.position(code, code
+				new TextDocumentIdentifier(URI), Positions.position(code, code
 					.length()))).get(30, TimeUnit.SECONDS).getRight();
 			final List<CompletionItem> items = new ArrayList<>(list.getItems());
 			items.sort((a, b) -> a.getSortText().compareTo(b.getSortText()));

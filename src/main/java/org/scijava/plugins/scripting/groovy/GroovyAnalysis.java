@@ -68,7 +68,7 @@ import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
-import org.scijava.code.api.ScriptDocument;
+import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.util.Types;
 
 /**
@@ -443,7 +443,7 @@ final class GroovyAnalysis {
 
 	/**
 	 * Gets the type of an expression, e.g. an argument, as a type name for
-	 * {@link org.scijava.code.api.Signatures}; or null if unknown.
+	 * {@link Signatures}; or null if unknown.
 	 */
 	String typeName(final Expression e) {
 		if (e instanceof GStringExpression) return String.class.getName();
