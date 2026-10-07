@@ -66,9 +66,9 @@ import org.eclipse.lsp4j.CompletionItemLabelDetails;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.TextEdit;
-import org.scijava.code.api.ClassIndex;
-import org.scijava.code.api.CodeCompletionService;
-import org.scijava.code.api.ScriptDocument;
+import org.scijava.code.lsp.ClassIndex;
+import org.scijava.code.lsp.LanguageServerService;
+import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.code.lsp.Callable;
 import org.scijava.code.lsp.Environment;
 import org.scijava.code.lsp.Members;
@@ -128,17 +128,17 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		new Thread(ClassIndex::ensureCache, "Groovy-ClassIndex-warmup").start();
 	}
 
-	private final CodeCompletionService completion;
+	private final LanguageServerService servers;
 
 	/**
-	 * @param completion Reads the scripts' parameters.
+	 * @param servers Reads the scripts' parameters.
 	 * @param environment Where the scripts run (e.g. a live interpreter).
 	 */
-	public GroovyLanguageServer(final CodeCompletionService completion,
+	public GroovyLanguageServer(final LanguageServerService servers,
 		final Environment environment)
 	{
 		super(environment);
-		this.completion = completion;
+		this.servers = servers;
 	}
 
 	@Override
@@ -618,8 +618,8 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	 */
 	private Map<String, Class<?>> predefinedVariables(final String text) {
 		final Map<String, Class<?>> vars = new LinkedHashMap<>();
-		if (completion != null) {
-			completion.scriptParameters(text).forEach((name, type) -> {
+		if (servers != null) {
+			servers.scriptParameters(text).forEach((name, type) -> {
 				if (isIdentifier(name)) vars.put(name, type);
 			});
 		}
