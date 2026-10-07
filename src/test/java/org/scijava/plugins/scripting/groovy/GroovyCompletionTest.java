@@ -43,23 +43,15 @@ import java.util.stream.Collectors;
 import javax.script.ScriptEngine;
 
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.CompletionList;
-import org.eclipse.lsp4j.CompletionParams;
-import org.eclipse.lsp4j.DidCloseTextDocumentParams;
-import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.SignatureHelp;
-import org.eclipse.lsp4j.SignatureHelpParams;
-import org.eclipse.lsp4j.TextDocumentIdentifier;
-import org.eclipse.lsp4j.TextDocumentItem;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.scijava.Context;
 import org.scijava.code.lsp.ClassIndex;
 import org.scijava.code.lsp.LanguageServerService;
-import org.scijava.code.lsp.Positions;
-import org.scijava.code.lsp.MergedLanguageServer;
 import org.scijava.code.lsp.RatedSignatureInformation;
+import org.scijava.code.lsp.ScriptSession;
 import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
 
@@ -70,8 +62,6 @@ import org.scijava.script.ScriptService;
  * @author Gabriel Selzer
  */
 public class GroovyCompletionTest {
-
-	private static final String URI = "untitled:/test.groovy";
 
 	private Context context;
 	private ScriptLanguage groovy;
@@ -301,7 +291,7 @@ public class GroovyCompletionTest {
 	public void testInterpreterBindings() throws Exception {
 		final ScriptEngine engine = groovy.getScriptEngine();
 		engine.put("injected", new ArrayList<String>());
-		final List<String> texts = labels(items(servers.server(groovy, engine
+		final List<String> texts = labels(items(servers.session(groovy, engine
 			.getContext()), "injected.si"));
 		assertTrue(texts.toString(), texts.contains("size"));
 	}
@@ -350,7 +340,7 @@ public class GroovyCompletionTest {
 
 	/** The problems found in a script, e.g. {@code Error@0:4-6 message}. */
 	private List<String> problems(final String code) {
-		return servers.diagnose(groovy, "untitled:/check.groovy", code, 20_000)
+		return servers.diagnose(groovy, code, 20_000)
 			.stream().map(d -> d.getSeverity() + "@" + d.getRange().getStart()
 				.getLine() + ":" + d.getRange().getStart().getCharacter() + "-" + d
 					.getRange().getEnd().getCharacter() + " " + d.getMessage().getLeft())
@@ -358,18 +348,12 @@ public class GroovyCompletionTest {
 	}
 
 	private SignatureHelp help(final String code) {
-		final MergedLanguageServer server = servers.server(groovy);
-		open(server, code);
-		try {
-			return server.signatureHelp(new SignatureHelpParams(
-				new TextDocumentIdentifier(URI), Positions.position(code, code
-					.length()))).get(30, TimeUnit.SECONDS);
+		try (ScriptSession session = servers.session(groovy)) {
+			return session.signatureHelp(code, code.length()).get(30,
+				TimeUnit.SECONDS);
 		}
 		catch (final Exception exc) {
 			throw new RuntimeException(exc);
-		}
-		finally {
-			close(server);
 		}
 	}
 
@@ -385,26 +369,20 @@ public class GroovyCompletionTest {
 	}
 
 	private List<CompletionItem> items(final String code) {
-		return items(servers.server(groovy), code);
+		return items(servers.session(groovy), code);
 	}
 
-	private static List<CompletionItem> items(final MergedLanguageServer server,
+	private static List<CompletionItem> items(final ScriptSession session,
 		final String code)
 	{
-		open(server, code);
-		try {
-			final CompletionList list = server.completion(new CompletionParams(
-				new TextDocumentIdentifier(URI), Positions.position(code, code
-					.length()))).get(30, TimeUnit.SECONDS).getRight();
-			final List<CompletionItem> items = new ArrayList<>(list.getItems());
+		try (ScriptSession s = session) {
+			final List<CompletionItem> items = new ArrayList<>(s.completion(
+				code, code.length()).get(30, TimeUnit.SECONDS).getItems());
 			items.sort((a, b) -> a.getSortText().compareTo(b.getSortText()));
 			return items;
 		}
 		catch (final Exception exc) {
 			throw new RuntimeException(exc);
-		}
-		finally {
-			close(server);
 		}
 	}
 
@@ -415,17 +393,5 @@ public class GroovyCompletionTest {
 	private static List<String> labels(final List<CompletionItem> items) {
 		return items.stream().map(CompletionItem::getLabel).collect(Collectors
 			.toList());
-	}
-
-	private static void open(final MergedLanguageServer server,
-		final String code)
-	{
-		server.didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(URI,
-			"groovy", 1, code)));
-	}
-
-	private static void close(final MergedLanguageServer server) {
-		server.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(
-			URI)));
 	}
 }
