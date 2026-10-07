@@ -64,14 +64,18 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.CompletionItemLabelDetails;
 import org.eclipse.lsp4j.CompletionList;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.TextEdit;
-import org.scijava.code.lsp.ClassIndex;
-import org.scijava.code.lsp.LanguageServerService;
-import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.code.lsp.Callable;
+import org.scijava.code.lsp.ClassIndex;
 import org.scijava.code.lsp.Environment;
+import org.scijava.code.lsp.LanguageServerService;
 import org.scijava.code.lsp.Members;
+import org.scijava.code.lsp.Positions;
+import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.code.lsp.ScriptLanguageServer;
 import org.scijava.code.lsp.Signatures;
 import org.scijava.util.Types;
@@ -211,6 +215,36 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		final ClassLoader loader = loader();
 		return new SignatureHelp(Signatures.rateAll(callables, argTypes, (a,
 			p) -> Signatures.fit(a, p, loader)), 0, call.call.active);
+	}
+
+	/**
+	 * Finds the problems Groovy's compiler and type checker would report
+	 * that also trouble the script when it runs (see
+	 * {@link GroovyAnalysis#problems()}), in the script as written.
+	 */
+	@Override
+	protected List<Diagnostic> diagnose(final Document doc) {
+		final String text = doc.text();
+		final ScriptDocument sd = ScriptDocument.of(text, predefinedVariables(
+			text), DIALECT, null);
+		final GroovyAnalysis analysis = GroovyAnalysis.of(sd.text(), loader());
+		final List<Diagnostic> found = new ArrayList<>();
+		for (final GroovyAnalysis.Problem p : analysis.problems()) {
+			final int start = sd.map().toOriginal(offset(sd.text(), p.line,
+				p.column));
+			// NB: Not in the declarations prepended.
+			if (start < 0) continue;
+			int end = sd.map().toOriginal(offset(sd.text(), p.endLine,
+				p.endColumn));
+			// NB: At least one character, on the line where it starts.
+			final int lineEnd = text.indexOf('\n', start);
+			if (end <= start) end = Math.min(start + 1, text.length());
+			if (lineEnd >= 0 && end > lineEnd) end = Math.max(lineEnd, start);
+			found.add(diagnostic(doc, start, end, p.warning
+				? DiagnosticSeverity.Warning : DiagnosticSeverity.Error, p.message,
+				"groovy"));
+		}
+		return found;
 	}
 
 	// -- Helper methods --
@@ -642,6 +676,14 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		final ClassLoader loader = Thread.currentThread().getContextClassLoader();
 		return loader != null ? loader : GroovyLanguageServer.class
 			.getClassLoader();
+	}
+
+	/** The offset of a 1-based line and column, as Groovy reports them. */
+	private static int offset(final String text, final int line,
+		final int column)
+	{
+		return Positions.offset(text, new Position(Math.max(line - 1, 0), Math
+			.max(column - 1, 0)));
 	}
 
 	private static boolean isIdentifier(final String name) {
