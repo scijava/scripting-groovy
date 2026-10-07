@@ -111,6 +111,24 @@ public class GroovyCompletionTest {
 	}
 
 	@Test
+	public void testMembersOfBindings() {
+		// Variables assigned without a declaration are typed as assigned...
+		assertTrue(complete("z = \"abc\"\nz.toU").contains("toUpperCase"));
+		assertTrue(complete("z = new ArrayList()\ny = z.subList(0, 1)\ny.isEm")
+			.contains("isEmpty"));
+		// ...as last assigned.
+		final List<String> reassigned = complete(
+			"z = 'abc'\nz = new File('a')\nz.getN");
+		assertTrue(reassigned.contains("getName"));
+		// ...and offered with their type.
+		final List<CompletionItem> items = items("zed = 'abc'\nx = ze");
+		final CompletionItem zed = items.stream().filter(c -> "zed".equals(c
+			.getLabel())).findFirst().orElse(null);
+		assertTrue(String.valueOf(labels(items)), zed != null);
+		assertEquals("java.lang.String zed", zed.getDetail());
+	}
+
+	@Test
 	public void testCallablesAreSnippets() {
 		final CompletionItem upper = items("def s = 'x'\ns.toUpp").stream().filter(
 			c -> c.getLabelDetails() != null && "()".equals(c.getLabelDetails()

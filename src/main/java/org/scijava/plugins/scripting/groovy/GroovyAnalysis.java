@@ -36,6 +36,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,10 +44,12 @@ import java.util.Map;
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.DynamicVariable;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.ModuleNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.Variable;
+import org.codehaus.groovy.ast.expr.BinaryExpression;
 import org.codehaus.groovy.ast.expr.ClassExpression;
 import org.codehaus.groovy.ast.expr.ClosureExpression;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
@@ -68,6 +71,7 @@ import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
+import org.codehaus.groovy.transform.stc.TypeCheckingExtension;
 import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.util.Types;
 
@@ -230,7 +234,7 @@ final class GroovyAnalysis {
 				// would run, and dynamic code fails it, so run it ourselves.
 				for (final ClassNode c : module.getClasses()) {
 					try {
-						new StaticTypeCheckingVisitor(source, c).visitClass(c);
+						typeCheck(source, c);
 					}
 					catch (final RuntimeException | LinkageError | AssertionError exc) {
 						// NB: Keep whatever types were inferred before the failure.
@@ -247,6 +251,54 @@ final class GroovyAnalysis {
 				// NB: Nothing to clean up, then.
 			}
 		}
+	}
+
+	/**
+	 * Runs the static type checker over a class of the script, typing the
+	 * script's bindings (variables assigned without a declaration, e.g.
+	 * {@code z = "abc"}), which it would leave untyped: each use of one has the
+	 * type last assigned to it, in source order (the source ends at the caret).
+	 */
+	private static void typeCheck(final SourceUnit source, final ClassNode c) {
+		final Map<String, ClassNode> bindings = new HashMap<>();
+		final StaticTypeCheckingVisitor checker = new StaticTypeCheckingVisitor(
+			source, c)
+		{
+
+			@Override
+			public void visitBinaryExpression(final BinaryExpression e) {
+				super.visitBinaryExpression(e);
+				if (!isBindingAssignment(e)) return;
+				final String name = ((VariableExpression) e.getLeftExpression())
+					.getName();
+				final ClassNode type = getType(e.getRightExpression());
+				if (type == null || "java.lang.Object".equals(type.getName())) {
+					bindings.remove(name);
+				}
+				else bindings.put(name, type);
+			}
+		};
+		checker.addTypeCheckingExtension(new TypeCheckingExtension(checker) {
+
+			@Override
+			public boolean handleUnresolvedVariableExpression(
+				final VariableExpression v)
+			{
+				final ClassNode type = bindings.get(v.getName());
+				if (type == null) return false;
+				storeType(v, type);
+				return true;
+			}
+		});
+		checker.visitClass(c);
+	}
+
+	/** True iff the expression assigns a script binding, e.g. {@code z = 1}. */
+	private static boolean isBindingAssignment(final BinaryExpression e) {
+		return e.getOperation().getType() == org.codehaus.groovy.syntax.Types.ASSIGN &&
+			e.getLeftExpression() instanceof VariableExpression &&
+			((VariableExpression) e.getLeftExpression())
+				.getAccessedVariable() instanceof DynamicVariable;
 	}
 
 	/** True iff the source parsed (syntax errors prevent any analysis). */
@@ -360,6 +412,18 @@ final class GroovyAnalysis {
 					else addDeclared(e.getVariableExpression());
 				}
 				super.visitDeclarationExpression(e);
+			}
+
+			@Override
+			public void visitBinaryExpression(final BinaryExpression e) {
+				// NB: A binding assigned, e.g. z = "abc".
+				if (isBindingAssignment(e)) {
+					final String name = ((VariableExpression) e.getLeftExpression())
+						.getName();
+					vars.remove(name);
+					vars.put(name, typeOf(e.getRightExpression()));
+				}
+				super.visitBinaryExpression(e);
 			}
 
 			private void addDeclared(final VariableExpression v) {
