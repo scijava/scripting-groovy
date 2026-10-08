@@ -48,7 +48,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.scijava.Context;
-import org.scijava.code.lsp.ClassIndex;
+import org.scijava.code.lsp.jvm.ClassIndex;
 import org.scijava.code.lsp.LanguageServerService;
 import org.scijava.code.lsp.RatedSignatureInformation;
 import org.scijava.code.lsp.ScriptSession;
