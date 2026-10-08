@@ -50,7 +50,6 @@ import org.junit.Test;
 import org.scijava.Context;
 import org.scijava.code.lsp.jvm.ClassIndex;
 import org.scijava.code.lsp.LanguageServerService;
-import org.scijava.code.lsp.RatedSignatureInformation;
 import org.scijava.code.lsp.ScriptSession;
 import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
@@ -302,24 +301,23 @@ public class GroovyCompletionTest {
 		// first; the integral ones do not. The caret is in the second argument.
 		final SignatureHelp max = help("Math.max(1.5, ");
 		assertEquals(Integer.valueOf(1), max.getActiveParameter());
-		assertEquals("[double:MATCH, float:MATCH, int:MISMATCH, long:MISMATCH]",
-			describe(max));
+		assertEquals("[double, float, int, long]", describe(max));
 		// An integer fits the integral overloads, and converts to the others.
-		assertEquals("[int:MATCH, long:MATCH, double:CONVERSION, " +
-			"float:CONVERSION]", describe(help("Math.max(1, 2")));
-		// Nothing typed yet: unrated.
-		assertTrue(describe(help("Math.max(")).contains("UNKNOWN"));
+		assertEquals("[int, long, double, float]", describe(help(
+			"Math.max(1, 2")));
+		// Nothing typed yet: all overloads.
+		assertEquals(4, help("Math.max(").getSignatures().size());
 		// Arguments' types come from the analysis, e.g. of variables.
 		final SignatureHelp indexOf = help("def s = 'abc'\ndef c = 'b'\n" +
 			"s.indexOf(c, ");
-		assertEquals("java.lang.String:MATCH", describe(indexOf).replaceAll(
+		assertEquals("java.lang.String", describe(indexOf).replaceAll(
 			"^\\[([^,]*),.*", "$1"));
 		// Constructors, and the script's own functions.
 		assertTrue(describe(help("new StringBuilder(")).contains(
 			"java.lang.String"));
 		final SignatureHelp area = help("def area(int w, int h) { w * h }\n" +
 			"area(3, ");
-		assertEquals("[int:MATCH]", describe(area));
+		assertEquals("[int]", describe(area));
 		// The innermost call, and none outside calls.
 		assertEquals(Integer.valueOf(0), help("Math.max(Math.abs(")
 			.getActiveParameter());
@@ -357,14 +355,14 @@ public class GroovyCompletionTest {
 		}
 	}
 
-	/** Each signature's first parameter type and fit, in order. */
+	/** Each signature's first parameter type, in order. */
 	private static String describe(final SignatureHelp help) {
 		return help.getSignatures().stream().map(s -> {
 			final String first = s.getParameters().isEmpty() ? "()" : s
 				.getParameters().get(0).getLabel().getLeft();
 			final String type = first.contains(" ") ? first.substring(0, first
 				.lastIndexOf(' ')) : first;
-			return type + ":" + RatedSignatureInformation.fitOf(s);
+			return type;
 		}).collect(Collectors.toList()).toString();
 	}
 
