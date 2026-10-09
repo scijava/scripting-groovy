@@ -230,11 +230,11 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		final GroovyAnalysis analysis = GroovyAnalysis.of(sd.text(), loader());
 		final List<Diagnostic> found = new ArrayList<>();
 		for (final GroovyAnalysis.Problem p : analysis.problems()) {
-			final int start = sd.map().toOriginal(offset(sd.text(), p.line,
+			final int start = sd.toOriginal(offset(sd.text(), p.line,
 				p.column));
 			// NB: Not in the declarations prepended.
 			if (start < 0) continue;
-			int end = sd.map().toOriginal(offset(sd.text(), p.endLine,
+			int end = sd.toOriginal(offset(sd.text(), p.endLine,
 				p.endColumn));
 			// NB: At least one character, on the line where it starts.
 			final int lineEnd = text.indexOf('\n', start);
