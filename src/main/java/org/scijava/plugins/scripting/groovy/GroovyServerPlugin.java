@@ -33,7 +33,7 @@ import org.eclipse.lsp4j.services.LanguageServer;
 import org.scijava.Priority;
 import org.scijava.code.lsp.Environment;
 import org.scijava.code.lsp.LanguageServerPlugin;
-import org.scijava.code.lsp.script.ScriptDialect;
+import org.scijava.code.lsp.ScriptDialect;
 import org.scijava.plugin.Plugin;
 import org.scijava.script.ScriptLanguage;
 

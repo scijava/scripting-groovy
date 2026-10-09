@@ -75,7 +75,7 @@ import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.codehaus.groovy.transform.stc.TypeCheckingExtension;
-import org.scijava.code.lsp.script.ScriptDocument;
+import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.util.Types;
 
 /**
