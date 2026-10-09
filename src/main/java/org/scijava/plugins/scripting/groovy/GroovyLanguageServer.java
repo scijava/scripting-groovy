@@ -74,7 +74,7 @@ import org.scijava.code.lsp.jvm.ClassIndex;
 import org.scijava.code.lsp.Environment;
 import org.scijava.code.lsp.jvm.Members;
 import org.scijava.code.lsp.Positions;
-import org.scijava.code.lsp.script.ScriptDocument;
+import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.code.lsp.jvm.ScriptLanguageServer;
 import org.scijava.code.lsp.jvm.Signatures;
 import org.scijava.util.Types;

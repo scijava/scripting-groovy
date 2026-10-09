@@ -29,7 +29,7 @@
 
 package org.scijava.plugins.scripting.groovy;
 
-import org.scijava.code.lsp.script.ScriptDialect;
+import org.scijava.code.lsp.ScriptDialect;
 
 /**
  * How Groovy scripts see their predefined variables (script parameters,
