@@ -31,25 +31,22 @@ package org.scijava.plugins.scripting.groovy;
 
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.scijava.Priority;
-import org.scijava.code.lsp.LanguageServerService;
 import org.scijava.code.lsp.Environment;
 import org.scijava.code.lsp.LanguageServerPlugin;
-import org.scijava.plugin.Parameter;
+import org.scijava.code.lsp.script.ScriptDialect;
 import org.scijava.plugin.Plugin;
 import org.scijava.script.ScriptLanguage;
 
 /**
  * Offers Groovy's in-process language server (see
- * {@link GroovyLanguageServer}).
+ * {@link GroovyLanguageServer}), seeing scripts as plain Groovy (see
+ * {@link GroovyDialect}).
  *
  * @author Gabriel Selzer
  */
 @Plugin(type = LanguageServerPlugin.class, name = "Groovy",
 	priority = Priority.HIGH)
 public class GroovyServerPlugin implements LanguageServerPlugin {
-
-	@Parameter(required = false)
-	private LanguageServerService servers;
 
 	@Override
 	public boolean supports(final ScriptLanguage language) {
@@ -58,6 +55,11 @@ public class GroovyServerPlugin implements LanguageServerPlugin {
 
 	@Override
 	public LanguageServer create(final Environment environment) {
-		return new GroovyLanguageServer(servers, environment);
+		return new GroovyLanguageServer(environment);
+	}
+
+	@Override
+	public ScriptDialect dialect() {
+		return GroovyLanguageServer.DIALECT;
 	}
 }
