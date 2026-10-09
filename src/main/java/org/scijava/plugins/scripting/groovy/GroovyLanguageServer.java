@@ -72,7 +72,6 @@ import org.eclipse.lsp4j.TextEdit;
 import org.scijava.code.lsp.jvm.Callable;
 import org.scijava.code.lsp.jvm.ClassIndex;
 import org.scijava.code.lsp.Environment;
-import org.scijava.code.lsp.LanguageServerService;
 import org.scijava.code.lsp.jvm.Members;
 import org.scijava.code.lsp.Positions;
 import org.scijava.code.lsp.script.ScriptDocument;
@@ -109,7 +108,10 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	/** Upper bound on class-name suggestions, which can be very numerous. */
 	private static final int MAX_CLASSES = 500;
 
-	/** How scripts see their predefined variables: as declared Java objects. */
+	/**
+	 * How scripts see their predefined variables (script parameters, an
+	 * interpreter's bindings): as declared Java objects.
+	 */
 	static final GroovyDialect DIALECT = new GroovyDialect();
 
 	/** An import statement being typed: "import a.b.C". */
@@ -132,17 +134,11 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		new Thread(ClassIndex::ensureCache, "Groovy-ClassIndex-warmup").start();
 	}
 
-	private final LanguageServerService servers;
-
 	/**
-	 * @param servers Reads the scripts' parameters.
 	 * @param environment Where the scripts run (e.g. a live interpreter).
 	 */
-	public GroovyLanguageServer(final LanguageServerService servers,
-		final Environment environment)
-	{
+	public GroovyLanguageServer(final Environment environment) {
 		super(environment);
-		this.servers = servers;
 	}
 
 	@Override
@@ -150,8 +146,6 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		final String text = doc.text();
 		final String line = doc.lineTo(caret);
 		final List<CompletionItem> none = new ArrayList<>();
-		// NB: Lines starting with '#' are SciJava script parameters (or shebangs).
-		if (line.trim().startsWith("#")) return list(doc, caret, caret, none);
 
 		final Matcher imp = IMPORT.matcher(line);
 		if (imp.find()) {
@@ -175,9 +169,9 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 			return list(doc, caret, caret, none);
 		}
 
-		final Map<String, Class<?>> predefined = predefinedVariables(text);
+		final Map<String, Class<?>> predefined = liveVariables();
 		final ScriptDocument sd = ScriptDocument.of(text.substring(0,
-			replaceStart), predefined, DIALECT, null);
+			replaceStart), predefined, DIALECT);
 		final GroovyAnalysis analysis = analyze(sd, predefined, line.substring(0,
 			line.length() - prefix.length()));
 		if (analysis == null) return list(doc, caret, caret, none); // string, comment
@@ -197,7 +191,6 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	protected SignatureHelp signatureHelp(final Document doc, final int caret) {
 		final String text = doc.text();
 		final String line = doc.lineTo(caret);
-		if (line.trim().startsWith("#")) return null;
 		final CallContext call = callContext(text, caret, line);
 		if (call == null) return null;
 		final List<Callable> callables = callables(call.analysis, call.call);
@@ -225,8 +218,8 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	@Override
 	protected List<Diagnostic> diagnose(final Document doc) {
 		final String text = doc.text();
-		final ScriptDocument sd = ScriptDocument.of(text, predefinedVariables(
-			text), DIALECT, null);
+		final ScriptDocument sd = ScriptDocument.of(text, liveVariables(),
+			DIALECT);
 		final GroovyAnalysis analysis = GroovyAnalysis.of(sd.text(), loader());
 		final List<Diagnostic> found = new ArrayList<>();
 		for (final GroovyAnalysis.Problem p : analysis.problems()) {
@@ -272,9 +265,9 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		id.find();
 		final String prefix = id.group();
 		final int start = caret - prefix.length();
-		final Map<String, Class<?>> predefined = predefinedVariables(text);
+		final Map<String, Class<?>> predefined = liveVariables();
 		final GroovyAnalysis analysis = analyze(ScriptDocument.of(text.substring(
-			0, start), predefined, DIALECT, null), predefined, line.substring(0, line
+			0, start), predefined, DIALECT), predefined, line.substring(0, line
 				.length() - prefix.length()));
 		if (analysis == null) return null; // string or comment
 		final GroovyAnalysis.Call call = analysis.callAtCaret();
@@ -306,7 +299,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		for (final String name : order) {
 			vars.put(name, Types.box(call.analysis.toClass(local.get(name))));
 		}
-		predefinedVariables(text).forEach(vars::putIfAbsent);
+		liveVariables().forEach(vars::putIfAbsent);
 		final List<CompletionItem> fitting = new ArrayList<>();
 		final List<CompletionItem> others = new ArrayList<>();
 		for (final Map.Entry<String, Class<?>> v : vars.entrySet()) {
@@ -339,7 +332,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		final GroovyAnalysis analysis = GroovyAnalysis.of(code, loader());
 		if (analysis.isParsed()) return analysis;
 		final String lineCode = GroovyAnalysis.prepare(ScriptDocument.of(
-			lineBefore, predefined, DIALECT, null));
+			lineBefore, predefined, DIALECT));
 		return lineCode == null ? analysis : GroovyAnalysis.of(lineCode, loader());
 	}
 
@@ -645,18 +638,13 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	}
 
 	/**
-	 * Gets the variables defined before the script runs: its parameters (e.g.
-	 * {@code #@ String name}) and, in a live interpreter, its bindings.
+	 * Gets the variables defined before the code runs, in a live interpreter:
+	 * its bindings. (A script's parameters are declared in its text.)
 	 *
 	 * @return Map of variable name to type.
 	 */
-	private Map<String, Class<?>> predefinedVariables(final String text) {
+	private Map<String, Class<?>> liveVariables() {
 		final Map<String, Class<?>> vars = new LinkedHashMap<>();
-		if (servers != null) {
-			servers.scriptParameters(text).forEach((name, type) -> {
-				if (isIdentifier(name)) vars.put(name, type);
-			});
-		}
 		final ScriptContext live = environment().live();
 		final Bindings bindings = live == null ? null : live.getBindings(
 			ScriptContext.ENGINE_SCOPE);
