@@ -27,7 +27,7 @@
  * #L%
  */
 
-package org.scijava.plugins.scripting.groovy;
+package org.scijava.plugins.scripting.groovy.completion;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -75,21 +75,17 @@ import org.scijava.code.lsp.Environment;
 import org.scijava.code.lsp.jvm.Members;
 import org.scijava.code.lsp.Positions;
 import org.scijava.code.lsp.ScriptDocument;
-import org.scijava.code.lsp.jvm.ScriptLanguageServer;
+import org.scijava.code.lsp.jvm.AbstractLanguageServer;
 import org.scijava.code.lsp.jvm.Signatures;
 import org.scijava.util.Types;
 
 /**
  * An in-process language server for Groovy, driven by Groovy's own compiler
- * (see {@link GroovyAnalysis}): members of the expression before a dot, using
- * the types the static type checker infers; variables in scope; keywords;
- * class names, with automatic imports; import statements; and, in a call's
- * arguments, the variables fitting the parameter first. Signature help rates
- * the overloads against the arguments typed.
+ * (see {@link TypedAST}).
  *
  * @author Gabriel Selzer
  */
-public class GroovyLanguageServer extends ScriptLanguageServer {
+public class GroovyLanguageServer extends AbstractLanguageServer {
 
 	private static final List<String> KEYWORDS = Arrays.asList("as", "assert",
 		"boolean", "break", "byte", "case", "catch", "char", "class", "continue",
@@ -141,6 +137,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		super(environment);
 	}
 
+
 	@Override
 	protected CompletionList complete(final Document doc, final int caret) {
 		final String text = doc.text();
@@ -163,7 +160,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		final boolean member = before.trim().endsWith(".") && !before.trim()
 			.endsWith("..") && !NUMBER_DOT.matcher(before).find();
 		if (!member && prefix.isEmpty()) {
-			return list(doc, caret, caret, argumentChoices(text, caret, line));
+			return list(doc, caret, caret, argumentChoices(doc, caret, line));
 		}
 		if (!member && Character.isDigit(prefix.charAt(0))) {
 			return list(doc, caret, caret, none);
@@ -172,14 +169,14 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		final Map<String, Class<?>> predefined = liveVariables();
 		final ScriptDocument sd = ScriptDocument.of(text.substring(0,
 			replaceStart), predefined, DIALECT);
-		final GroovyAnalysis analysis = analyze(sd, predefined, line.substring(0,
+		final TypedAST ast = typedAST(sd, predefined, line.substring(0,
 			line.length() - prefix.length()));
-		if (analysis == null) return list(doc, caret, caret, none); // string, comment
+		if (ast == null) return list(doc, caret, caret, none); // string, comment
 
 		final List<CompletionItem> items = new ArrayList<>();
-		if (member) items.addAll(memberCompletions(analysis, before, prefix));
+		if (member) items.addAll(memberCompletions(ast, before, prefix));
 		else {
-			items.addAll(variableCompletions(analysis.variablesAtCaret(), sd
+			items.addAll(variableCompletions(ast.variablesAtCaret(), sd
 				.parameters(), prefix));
 			items.addAll(keywordCompletions(prefix));
 			items.addAll(classCompletions(doc, prefix));
@@ -189,11 +186,10 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 
 	@Override
 	protected SignatureHelp signatureHelp(final Document doc, final int caret) {
-		final String text = doc.text();
 		final String line = doc.lineTo(caret);
-		final CallContext call = callContext(text, caret, line);
+		final CallContext call = callContext(doc, caret, line);
 		if (call == null) return null;
-		final List<Callable> callables = callables(call.analysis, call.call);
+		final List<Callable> callables = callables(call.ast, call.call);
 		if (callables.isEmpty()) return null;
 		// NB: Reflection lists methods in no particular order: sort them by
 		// their parameter types, so that equally good fits come out the same.
@@ -202,7 +198,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		// The types of the arguments before the caret's (which is being typed).
 		final List<String> argTypes = new ArrayList<>();
 		for (int i = 0; i < call.call.arguments.size(); i++) {
-			argTypes.add(i == call.call.active ? null : call.analysis.typeName(
+			argTypes.add(i == call.call.active ? null : call.ast.typeName(
 				call.call.arguments.get(i)));
 		}
 		final ClassLoader loader = loader();
@@ -213,16 +209,16 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	/**
 	 * Finds the problems Groovy's compiler and type checker would report
 	 * that also trouble the script when it runs (see
-	 * {@link GroovyAnalysis#problems()}), in the script as written.
+	 * {@link TypedAST#problems()}), in the script as written.
 	 */
 	@Override
 	protected List<Diagnostic> diagnose(final Document doc) {
 		final String text = doc.text();
 		final ScriptDocument sd = ScriptDocument.of(text, liveVariables(),
 			DIALECT);
-		final GroovyAnalysis analysis = GroovyAnalysis.of(sd.text(), loader());
+		final TypedAST ast = TypedAST.of(sd.text(), loader());
 		final List<Diagnostic> found = new ArrayList<>();
-		for (final GroovyAnalysis.Problem p : analysis.problems()) {
+		for (final TypedAST.Problem p : ast.problems()) {
 			final int start = sd.toOriginal(offset(sd.text(), p.line,
 				p.column));
 			// NB: Not in the declarations prepended.
@@ -245,59 +241,60 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	/** A call around the caret, as analyzed. */
 	private static final class CallContext {
 
-		private final GroovyAnalysis analysis;
-		private final GroovyAnalysis.Call call;
+		private final TypedAST ast;
+		private final TypedAST.Call call;
 
-		private CallContext(final GroovyAnalysis analysis,
-			final GroovyAnalysis.Call call)
+		private CallContext(final TypedAST ast,
+			final TypedAST.Call call)
 		{
-			this.analysis = analysis;
+			this.ast = ast;
 			this.call = call;
 		}
 	}
 
 	/** Analyzes the call around the caret, or returns null if none. */
-	private CallContext callContext(final String text, final int caret,
+	private CallContext callContext(final Document doc, final int caret,
 		final String line)
 	{
+		final String text = doc.text();
 		// NB: The argument being typed, if a name, is replaced by the marker.
 		final Matcher id = IDENTIFIER.matcher(line);
 		id.find();
 		final String prefix = id.group();
 		final int start = caret - prefix.length();
 		final Map<String, Class<?>> predefined = liveVariables();
-		final GroovyAnalysis analysis = analyze(ScriptDocument.of(text.substring(
+		final TypedAST ast = typedAST(ScriptDocument.of(text.substring(
 			0, start), predefined, DIALECT), predefined, line.substring(0, line
 				.length() - prefix.length()));
-		if (analysis == null) return null; // string or comment
-		final GroovyAnalysis.Call call = analysis.callAtCaret();
-		return call == null ? null : new CallContext(analysis, call);
+		if (ast == null) return null; // string or comment
+		final TypedAST.Call call = ast.callAtCaret();
+		return call == null ? null : new CallContext(ast, call);
 	}
 
 	/**
 	 * In a call's arguments, with nothing typed yet: the variables in scope,
 	 * those fitting the parameter first (as preselected).
 	 */
-	private List<CompletionItem> argumentChoices(final String text,
+	private List<CompletionItem> argumentChoices(final Document doc,
 		final int caret, final String line)
 	{
-		if (Signatures.callStart(text, caret) < 0) return new ArrayList<>();
-		final CallContext call = callContext(text, caret, line);
+		if (Signatures.callStart(doc.text(), caret) < 0) return new ArrayList<>();
+		final CallContext call = callContext(doc, caret, line);
 		if (call == null) return new ArrayList<>();
 		final Set<Class<?>> targets = new HashSet<>();
-		for (final Callable c : callables(call.analysis, call.call)) {
+		for (final Callable c : callables(call.ast, call.call)) {
 			if (call.call.active >= c.params().size()) continue;
 			final String type = c.params().get(call.call.active).type();
-			final Class<?> t = type == null ? null : Types.box(GroovyAnalysis.load(
+			final Class<?> t = type == null ? null : Types.box(TypedAST.load(
 				type, loader()));
 			if (t != null && t != Object.class) targets.add(t);
 		}
 		final Map<String, Class<?>> vars = new LinkedHashMap<>();
-		final Map<String, ClassNode> local = call.analysis.variablesAtCaret();
+		final Map<String, ClassNode> local = call.ast.variablesAtCaret();
 		final List<String> order = new ArrayList<>(local.keySet());
 		Collections.reverse(order);
 		for (final String name : order) {
-			vars.put(name, Types.box(call.analysis.toClass(local.get(name))));
+			vars.put(name, Types.box(call.ast.toClass(local.get(name))));
 		}
 		liveVariables().forEach(vars::putIfAbsent);
 		final List<CompletionItem> fitting = new ArrayList<>();
@@ -319,28 +316,30 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	}
 
 	/**
-	 * Analyzes the script up to the caret. If it does not parse (e.g. due to a
-	 * syntax error above the caret), falls back to the caret's line alone.
+	 * Builds the typed syntax tree of the script up to the caret. If it does not
+	 * parse (e.g. due to a syntax error above the caret), falls back to the
+	 * caret's line alone.
 	 *
-	 * @return The analysis, or null if the caret is in a string or comment.
+	 * @return The tree, or null if the caret is in a string or comment.
 	 */
-	private GroovyAnalysis analyze(final ScriptDocument doc,
+	private TypedAST typedAST(final ScriptDocument doc,
 		final Map<String, Class<?>> predefined, final String lineBefore)
 	{
-		final String code = GroovyAnalysis.prepare(doc);
+		final String code = TypedAST.closeBrackets(TypedAST.markCaret(
+			doc));
 		if (code == null) return null;
-		final GroovyAnalysis analysis = GroovyAnalysis.of(code, loader());
-		if (analysis.isParsed()) return analysis;
-		final String lineCode = GroovyAnalysis.prepare(ScriptDocument.of(
-			lineBefore, predefined, DIALECT));
-		return lineCode == null ? analysis : GroovyAnalysis.of(lineCode, loader());
+		final TypedAST ast = TypedAST.of(code, loader());
+		if (ast.isParsed()) return ast;
+		final String lineCode = TypedAST.closeBrackets(TypedAST
+			.markCaret(ScriptDocument.of(lineBefore, predefined, DIALECT)));
+		return lineCode == null ? ast : TypedAST.of(lineCode, loader());
 	}
 
 	private List<CompletionItem> memberCompletions(
-		final GroovyAnalysis analysis, final String before, final String prefix)
+		final TypedAST ast, final String before, final String prefix)
 	{
-		final Expression receiver = analysis.receiverAtCaret();
-		final ClassNode type = GroovyAnalysis.typeOf(receiver);
+		final Expression receiver = ast.receiverAtCaret();
+		final ClassNode type = TypedAST.typeOf(receiver);
 		if (type == null) {
 			// Perhaps a package name, e.g. "java.util."
 			final Matcher q = QUALIFIER.matcher(before);
@@ -349,9 +348,9 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		}
 		final boolean staticOnly = receiver instanceof ClassExpression;
 		if (type.redirect().isPrimaryClassNode()) {
-			return scriptClassMembers(analysis, type.redirect(), prefix, staticOnly);
+			return scriptClassMembers(ast, type.redirect(), prefix, staticOnly);
 		}
-		final Class<?> c = Types.box(analysis.toClass(type));
+		final Class<?> c = Types.box(ast.toClass(type));
 		if (c == null) return new ArrayList<>();
 		final List<CompletionItem> out = sorted(Members.of(c, prefix,
 			staticOnly));
@@ -363,7 +362,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 
 	/** Members of a class defined in the script itself. */
 	private List<CompletionItem> scriptClassMembers(
-		final GroovyAnalysis analysis, final ClassNode type, final String prefix,
+		final TypedAST ast, final ClassNode type, final String prefix,
 		final boolean staticOnly)
 	{
 		final List<CompletionItem> out = new ArrayList<>();
@@ -384,7 +383,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		}
 		final List<CompletionItem> sorted = sorted(out);
 		// Plus what it inherits from (compiled) superclasses.
-		final Class<?> superclass = analysis.toClass(type.getSuperClass());
+		final Class<?> superclass = ast.toClass(type.getSuperClass());
 		if (superclass != null && superclass != Object.class) {
 			sorted.addAll(sorted(Members.of(superclass, prefix, staticOnly)));
 		}
@@ -547,13 +546,13 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 	}
 
 	/** The signatures the call may be calling: methods or constructors. */
-	private List<Callable> callables(final GroovyAnalysis analysis,
-		final GroovyAnalysis.Call call)
+	private List<Callable> callables(final TypedAST ast,
+		final TypedAST.Call call)
 	{
 		final List<Callable> out = new ArrayList<>();
 		if (call.expression instanceof ConstructorCallExpression) {
 			final ClassNode type = call.expression.getType().redirect();
-			final Class<?> c = analysis.toClass(type);
+			final Class<?> c = ast.toClass(type);
 			if (c != null) out.addAll(Members.constructors(c));
 			else if (type.isPrimaryClassNode()) {
 				for (final ConstructorNode ctor : type.getDeclaredConstructors()) {
@@ -565,7 +564,7 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		if (call.expression instanceof StaticMethodCallExpression) {
 			final StaticMethodCallExpression e =
 				(StaticMethodCallExpression) call.expression;
-			return Members.methods(analysis.toClass(e.getOwnerType()), e.getMethod(),
+			return Members.methods(ast.toClass(e.getOwnerType()), e.getMethod(),
 				true);
 		}
 		final MethodCallExpression e = (MethodCallExpression) call.expression;
@@ -573,20 +572,20 @@ public class GroovyLanguageServer extends ScriptLanguageServer {
 		if (name == null) return out;
 		if (e.isImplicitThis()) {
 			// A function defined in the script, or a GDK method such as println.
-			for (final MethodNode m : analysis.scriptMethods(name)) {
+			for (final MethodNode m : ast.scriptMethods(name)) {
 				out.add(methodNode(name, m));
 			}
 			out.addAll(named(gdkMethods(Object.class, name), name));
 			return out;
 		}
 		final Expression receiver = e.getObjectExpression();
-		final ClassNode type = GroovyAnalysis.typeOf(receiver);
+		final ClassNode type = TypedAST.typeOf(receiver);
 		if (type == null) return out;
 		final boolean staticOnly = receiver instanceof ClassExpression;
 		if (type.redirect().isPrimaryClassNode()) {
 			return scriptMethods(type.redirect(), name, staticOnly, true);
 		}
-		final Class<?> c = Types.box(analysis.toClass(type));
+		final Class<?> c = Types.box(ast.toClass(type));
 		if (c == null) return out;
 		out.addAll(Members.methods(c, name, staticOnly));
 		if (!staticOnly) out.addAll(named(gdkMethods(c, name), name));

@@ -27,7 +27,7 @@
  * #L%
  */
 
-package org.scijava.plugins.scripting.groovy;
+package org.scijava.plugins.scripting.groovy.completion;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
 import javax.script.ScriptEngine;
 
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.junit.After;
 import org.junit.Before;
@@ -55,8 +56,7 @@ import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
 
 /**
- * Tests {@link GroovyLanguageServer}, through the
- * {@link LanguageServerService}, as editors use it.
+ * Tests {@link GroovyServerPlugin}
  *
  * @author Gabriel Selzer
  */
@@ -79,11 +79,6 @@ public class GroovyCompletionTest {
 	}
 
 	@Test
-	public void testServerIsDiscovered() {
-		assertTrue(servers.supports(groovy));
-	}
-
-	@Test
 	public void testMembersOfInferredTypes() {
 		assertTrue(complete("def s = 'hello'\ns.toUpp").contains("toUpperCase"));
 		// Types flow through method calls...
@@ -100,6 +95,11 @@ public class GroovyCompletionTest {
 			"containsAll"));
 	}
 
+	/**
+	 * Variables assigned without a declaration ({@code x = ...}) are not local
+	 * variables but script bindings. The static type checker sees as
+	 * dynamic (of unknown type) so {@link TypedAST} types them itself.
+	 */
 	@Test
 	public void testMembersOfBindings() {
 		// Variables assigned without a declaration are typed as assigned...
@@ -338,8 +338,11 @@ public class GroovyCompletionTest {
 
 	/** The problems found in a script, e.g. {@code Error@0:4-6 message}. */
 	private List<String> problems(final String code) {
-		return servers.diagnose(groovy, code, 20_000)
-			.stream().map(d -> d.getSeverity() + "@" + d.getRange().getStart()
+		final List<Diagnostic> found;
+		try (ScriptSession session = servers.session(groovy)) {
+			found = session.update(code).diagnostics(20_000);
+		}
+		return found.stream().map(d -> d.getSeverity() + "@" + d.getRange().getStart()
 				.getLine() + ":" + d.getRange().getStart().getCharacter() + "-" + d
 					.getRange().getEnd().getCharacter() + " " + d.getMessage().getLeft())
 			.collect(Collectors.toList());
