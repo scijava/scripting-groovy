@@ -27,7 +27,7 @@
  * #L%
  */
 
-package org.scijava.plugins.scripting.groovy;
+package org.scijava.plugins.scripting.groovy.completion;
 
 import groovy.lang.GroovyClassLoader;
 
@@ -79,35 +79,46 @@ import org.scijava.code.lsp.ScriptDocument;
 import org.scijava.util.Types;
 
 /**
- * Static analysis of a Groovy script for code completion, using Groovy's own
- * compiler: the script is parsed and its names resolved, then it is run
- * through the static type checker, which infers the types of its expressions.
+ * The typed syntax tree of a Groovy script, up to the caret. Useful for
+ * answering LSP-related questions.
  * <p>
- * Scripts being edited are usually incomplete, and usually dynamically typed,
- * so compilation errors are expected and ignored: completion uses whatever the
- * compiler could work out. Only a syntax error prevents analysis; see
- * {@link #isParsed()}.
+ * Built by Groovy's own compiler: the script is
+ * parsed and its names resolved, then it is run through the static type
+ * checker, which infers the types of its expressions.
  * </p>
  * <p>
- * The analyzed source is built by {@link #prepare}, which marks the caret with
- * the identifier {@link #CARET}, so that it can be found in the syntax tree.
+ * Scripts being edited are usually incomplete, and usually dynamically typed,
+ * so compilation errors are expected and ignored: the tree has whatever types
+ * the compiler could work out, and none elsewhere. Only a syntax error leaves
+ * no tree; see {@link #isParsed()}.
+ * </p>
+ * <p>
+ * The source <em>actually parsed</em> is the provided source, with the
+ * following modifications:
+ * <ol>
+ * <li>Text after the caret is omitted</li>
+ * <li>The identifier {@link #CARET} (see {@link #markCaret}) is inserted
+ * 		at the caret position, so that it can be found in the syntax tree
+ * </li>
+ * <li>Any brackets left open are closed to pass parsing</li>
+ * </ol>
  * </p>
  *
  * @author Gabriel Selzer
  */
-final class GroovyAnalysis {
+final class TypedAST {
 
-	/** Identifier marking the caret position in the analyzed source. */
+	/** Identifier marking the caret position in the source. */
 	static final String CARET = "__scijava_caret__";
 
-	/** Recent analyses, by source: typing a word reuses the same analysis. */
-	private static final Map<String, GroovyAnalysis> CACHE =
-		new LinkedHashMap<String, GroovyAnalysis>(16, 0.75f, true)
+	/** Cache recent trees for each source file. */
+	private static final Map<String, TypedAST> CACHE =
+		new LinkedHashMap<String, TypedAST>(16, 0.75f, true)
 		{
 
 			@Override
 			protected boolean removeEldestEntry(
-				final Map.Entry<String, GroovyAnalysis> eldest)
+				final Map.Entry<String, TypedAST> eldest)
 			{
 				return size() > 16;
 			}
@@ -117,7 +128,7 @@ final class GroovyAnalysis {
 	private final ModuleNode module;
 	private final ClassLoader loader;
 
-	private GroovyAnalysis(final SourceUnit source, final ClassLoader loader) {
+	private TypedAST(final SourceUnit source, final ClassLoader loader) {
 		this.source = source;
 		this.module = source.getAST();
 		this.loader = loader;
@@ -126,33 +137,25 @@ final class GroovyAnalysis {
 	// -- Source preparation --
 
 	/**
-	 * Builds the source to analyze: the script up to the caret as plain Groovy
-	 * (its predefined variables declared, see {@link GroovyDialect}), then
-	 * {@link #CARET} and the brackets needed to close any left open.
+	 * Marks the caret: the script up to the caret as plain Groovy (its
+	 * predefined variables declared, see {@link GroovyDialect}), then
+	 * {@link #CARET}.
 	 *
 	 * @param doc The script up to the caret, without the partial token being
 	 *          completed.
-	 * @return The source, or null if the caret is in a string or comment.
 	 */
-	static String prepare(final ScriptDocument doc) {
-		return prepare(doc, CARET);
+	static String markCaret(final ScriptDocument doc) {
+		return doc.text() + CARET;
 	}
 
 	/**
-	 * As {@link #prepare(ScriptDocument)}, appending {@code tail} where the
-	 * caret is.
+	 * Closes the brackets left open at the end of {@code text}, appending the
+	 * closing ones (e.g. {@code foo(bar.} becomes {@code foo(bar.)}), so that
+	 * it parses.
+	 *
+	 * @return The text, closed; or null if it ends inside a string or comment.
 	 */
-	static String prepare(final ScriptDocument doc, final String tail) {
-		final String closers = closers(doc.text());
-		if (closers == null) return null;
-		return doc.text() + tail + closers;
-	}
-
-	/**
-	 * Gets the closing brackets for those left open at the end of
-	 * {@code text}, or null if the text ends inside a string or comment.
-	 */
-	static String closers(final String text) {
+	static String closeBrackets(final String text) {
 		final Deque<Character> open = new ArrayDeque<>();
 		int i = 0;
 		final int n = text.length();
@@ -191,29 +194,38 @@ final class GroovyAnalysis {
 				i++;
 			}
 		}
-		final StringBuilder sb = new StringBuilder();
+		final StringBuilder sb = new StringBuilder(text);
 		for (final char c : open) {
 			sb.append(c == '}' ? "\n}" : String.valueOf(c));
 		}
 		return sb.toString();
 	}
 
-	// -- Analysis --
+	// -- Building --
 
-	/** Analyzes the given (prepared) source, or reuses a recent analysis. */
-	static GroovyAnalysis of(final String code, final ClassLoader loader) {
+	/**
+	 * Builds the typed syntax tree of the given source (its caret marked, its
+	 * brackets closed), or reuses a recent one.
+	 */
+	static TypedAST of(final String code, final ClassLoader loader) {
 		synchronized (CACHE) {
-			final GroovyAnalysis cached = CACHE.get(code);
+			final TypedAST cached = CACHE.get(code);
 			if (cached != null) return cached;
 		}
-		final GroovyAnalysis analysis = analyze(code, loader);
+		final TypedAST ast = build(code, loader);
 		synchronized (CACHE) {
-			CACHE.put(code, analysis);
+			CACHE.put(code, ast);
 		}
-		return analysis;
+		return ast;
 	}
 
-	private static GroovyAnalysis analyze(final String code,
+	/**
+	 * Builds the typed syntax tree of the given source, with Groovy's
+	 * compiler: parses it, resolves its names, and runs the static type checker
+	 * over it (see {@link #typeCheck}), typing what it can; but makes no
+	 * bytecode.
+	 */
+	private static TypedAST build(final String code,
 		final ClassLoader loader)
 	{
 		final CompilerConfiguration config = new CompilerConfiguration();
@@ -244,7 +256,7 @@ final class GroovyAnalysis {
 					}
 				}
 			}
-			return new GroovyAnalysis(source, loader);
+			return new TypedAST(source, loader);
 		}
 		finally {
 			try {
@@ -304,7 +316,7 @@ final class GroovyAnalysis {
 				.getAccessedVariable() instanceof DynamicVariable;
 	}
 
-	/** A problem the compiler found in the analyzed source. */
+	/** A problem the compiler found in the source. */
 	static final class Problem {
 
 		/** Where it starts and ends: 1-based lines and columns. */
@@ -388,7 +400,7 @@ final class GroovyAnalysis {
 			.startsWith("groovy.lang.");
 	}
 
-	/** True iff the source parsed (syntax errors prevent any analysis). */
+	/** True iff the source parsed (a syntax error leaves no tree). */
 	boolean isParsed() {
 		return module != null;
 	}

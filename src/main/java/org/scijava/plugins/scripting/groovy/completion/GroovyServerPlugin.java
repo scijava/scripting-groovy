@@ -27,32 +27,47 @@
  * #L%
  */
 
-package org.scijava.plugins.scripting.groovy;
+package org.scijava.plugins.scripting.groovy.completion;
 
+import org.eclipse.lsp4j.services.LanguageServer;
+import org.scijava.Priority;
+import org.scijava.code.lsp.Environment;
+import org.scijava.code.lsp.LanguageServerPlugin;
 import org.scijava.code.lsp.ScriptDialect;
+import org.scijava.plugin.Plugin;
+import org.scijava.plugins.scripting.groovy.GroovyScriptLanguage;
+import org.scijava.script.ScriptLanguage;
 
 /**
- * How Groovy scripts see their predefined variables (script parameters,
- * interpreter bindings): as the Java objects themselves, declared e.g.
- * {@code net.imglib2.img.Img image}. Lines starting with {@code #} (script
- * parameters, shebangs) are not Groovy.
+ * Offers Groovy's in-process language server (see
+ * {@link GroovyLanguageServer}), seeing scripts as plain Groovy (see
+ * {@link GroovyDialect}).
  *
  * @author Gabriel Selzer
  */
-class GroovyDialect implements ScriptDialect {
+@Plugin(type = LanguageServerPlugin.class, name = "Groovy",
+	priority = Priority.HIGH)
+public class GroovyServerPlugin implements LanguageServerPlugin {
 
 	@Override
-	public String runtimeType(final Class<?> type) {
-		return GroovyLanguageServer.typeName(type);
+	public boolean supports(final String languageId) {
+		return "groovy".equals(languageId);
 	}
 
 	@Override
-	public String declare(final String name, final String type) {
-		return type + " " + name;
+	public boolean supports(final ScriptLanguage language) {
+		return language instanceof GroovyScriptLanguage;
 	}
 
 	@Override
-	public boolean blanks(final String line) {
-		return line.trim().startsWith("#");
+	public LanguageServer create(final String languageId,
+		final Environment environment)
+	{
+		return new GroovyLanguageServer(environment);
+	}
+
+	@Override
+	public ScriptDialect dialect() {
+		return GroovyLanguageServer.DIALECT;
 	}
 }
