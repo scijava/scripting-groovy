@@ -30,15 +30,34 @@
 package org.scijava.plugins.scripting.groovy.completion;
 
 import org.scijava.code.lsp.ScriptDialect;
+import org.scijava.plugin.Plugin;
+import org.scijava.plugins.scripting.groovy.GroovyScriptLanguage;
+import org.scijava.script.ScriptLanguage;
 
 /**
+ * Turns Groovy scripts into plain Groovy, for {@code groovy} language servers
+ * (e.g. scijava-code-lsp-groovy's): their parameters declared as Java objects,
+ * their {@code #@} lines blanked.
+ *
  * @author Gabriel Selzer
  */
-class GroovyDialect implements ScriptDialect {
+@Plugin(type = ScriptDialect.class, name = "Groovy")
+public class GroovyDialect implements ScriptDialect {
+
+	@Override
+	public boolean supports(final ScriptLanguage language) {
+		return language instanceof GroovyScriptLanguage;
+	}
+
+	@Override
+	public String languageId() {
+		return "groovy";
+	}
 
 	@Override
 	public String runtimeType(final Class<?> type) {
-		return GroovyLanguageServer.typeName(type);
+		final String name = type == null ? null : type.getCanonicalName();
+		return name == null ? "Object" : name;
 	}
 
 	@Override
