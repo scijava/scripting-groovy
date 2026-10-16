@@ -29,15 +29,19 @@
 
 package org.scijava.plugins.scripting.groovy.completion;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
 import org.scijava.code.lsp.ScriptDialect;
 import org.scijava.plugin.Plugin;
 import org.scijava.plugins.scripting.groovy.GroovyScriptLanguage;
 import org.scijava.script.ScriptLanguage;
 
 /**
- * Turns Groovy scripts into plain Groovy, for {@code groovy} language servers
- * (e.g. scijava-code-lsp-groovy's): their parameters declared as Java objects,
- * their {@code #@} lines blanked.
+ * Describes how to turn Groovy scripts into plain Groovy code, for
+ * {@code groovy} language servers (e.g. scijava-code-lsp-groovy's).
  *
  * @author Gabriel Selzer
  */
@@ -55,19 +59,26 @@ public class GroovyDialect implements ScriptDialect {
 	}
 
 	@Override
-	public String parameterType(final Class<?> type) {
-		// NB: Anonymous and local classes have no name to write.
+	public Header header(final Map<String, Class<?>> parameters) {
+		// Declare the types of each parameter for type reasoning; Groovy gets
+		// the very Java objects, named in full, so nothing needs importing
+		final List<String> declarations = new ArrayList<>();
+		parameters.forEach((name, type) -> declarations.add(parameterType(
+			type) + " " + name));
+		// Combine into a Header
+		return new Header(String.join("; ", declarations), Collections
+			.emptySet());
+	}
+
+	/**
+	 * @param type the Java type (of a SciJava Script parameter) declared in the
+	 *          script
+	 * @return the Groovy type of the object given to the script: the Java type
+	 *         itself, by its full name (or {@code Object} for anonymous and
+	 *         local classes, which have no name to write)
+	 */
+	static String parameterType(final Class<?> type) {
 		final String name = type.getCanonicalName();
 		return name == null ? "Object" : name;
-	}
-
-	@Override
-	public String declare(final String name, final String type) {
-		return type + " " + name;
-	}
-
-	@Override
-	public boolean blanks(final String line) {
-		return line.trim().startsWith("#");
 	}
 }
