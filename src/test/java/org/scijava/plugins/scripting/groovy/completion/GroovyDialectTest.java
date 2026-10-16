@@ -32,7 +32,9 @@ package org.scijava.plugins.scripting.groovy.completion;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.After;
@@ -40,6 +42,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.scijava.Context;
 import org.scijava.code.lsp.LanguageServerService;
+import org.scijava.code.lsp.ScriptDialect.Header;
 import org.scijava.code.lsp.ScriptSession;
 import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
@@ -74,30 +77,19 @@ public class GroovyDialectTest {
 	}
 
 	@Test
-	public void testParameterType() {
-		// Script parameters should stay the same type
-		assertEquals("java.util.List", dialect.parameterType(
-				java.util.List.class));
+	public void testHeader() {
+		// SciJava Script parameters should be declared in Groovy code with
+		// their Java types, e.g. "java.util.List items"
+		final Map<String, Class<?>> parameters = new LinkedHashMap<>();
+		parameters.put("items", java.util.List.class);
+		parameters.put("count", int.class);
 		// Anonymous classes have no name to write.
-		assertEquals("Object", dialect.parameterType(new Object() {
-		}
-				.getClass()));
-	}
-
-	@Test
-	public void testDeclare() {
-		// A SciJava Script parameter with type "java.util.List" and name "items"
-		// should be declared in Groovy code as "java.util.List items"
-		assertEquals(
-				"java.util.List items",
-				dialect.declare("items", "java.util.List")
-		);
-	}
-
-	@Test
-	public void testBlanks() {
-		// The only lines that need to be blanked are SciJava script parameters
-		assertTrue(dialect.blanks("#@ String name"));
+		parameters.put("thing", new Object() {}.getClass());
+		final Header header = dialect.header(parameters);
+		assertEquals("java.util.List items; int count; Object thing", header
+			.code());
+		// Nothing is imported.
+		assertTrue(header.hiddenNames().isEmpty());
 	}
 
 	@Test
