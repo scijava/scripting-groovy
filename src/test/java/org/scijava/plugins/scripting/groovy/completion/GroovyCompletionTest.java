@@ -56,7 +56,8 @@ import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
 
 /**
- * Tests {@link GroovyServerPlugin}
+ * Tests completing Groovy scripts: as {@link GroovyDialect} turns them into
+ * plain Groovy, for scijava-code-lsp-groovy's server.
  *
  * @author Gabriel Selzer
  */
@@ -262,12 +263,6 @@ public class GroovyCompletionTest {
 		final CompletionItem list = items("def a = new ArrayLis").stream().filter(
 			c -> c.getLabel().equals("ArrayList")).findFirst().orElse(null);
 		assertTrue(list != null && list.getAdditionalTextEdits() == null);
-		assertEquals(-1, GroovyLanguageServer.importOffset(
-			"import java.util.concurrent.atomic.*\n",
-			"java.util.concurrent.atomic.AtomicInteger"));
-		// Inserted after the last import.
-		assertEquals(20, GroovyLanguageServer.importOffset("import java.io.File\n" +
-			"x = 1\n", "java.util.concurrent.atomic.AtomicInteger"));
 	}
 
 	@Test

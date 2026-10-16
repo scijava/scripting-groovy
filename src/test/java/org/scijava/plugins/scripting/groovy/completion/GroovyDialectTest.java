@@ -29,38 +29,55 @@
 
 package org.scijava.plugins.scripting.groovy.completion;
 
-import org.eclipse.lsp4j.services.LanguageServer;
-import org.scijava.Priority;
-import org.scijava.code.lsp.Environment;
-import org.scijava.code.lsp.LanguageServerPlugin;
-import org.scijava.code.lsp.ScriptDialect;
-import org.scijava.plugin
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.scijava.Context;
+import org.scijava.code.lsp.LanguageServerService;
+import org.scijava.script.ScriptLanguage;
+import org.scijava.script.ScriptService;
+
 /**
- * Offers Groovy's in-process language server (see
- * {@link GroovyLanguageServer}), seeing scripts as plain Groovy (see
- * {@link GroovyDialect}).
+ * Tests {@link GroovyDialect}.
  *
  * @author Gabriel Selzer
  */
-@Plugin(type = LanguageServerPlugin.class, name = "Groovy",
-	priority = Priority.HIGH)
-public class GroovyServerPlugin implements LanguageServerPlugin {
+public class GroovyDialectTest {
 
-	@Override
-	public boolean supports(final String languageId) {
-		// NB: Groovy scripts too, by their language's name.
-		return "groovy".equals(languageId);
+	private Context context;
+	private ScriptLanguage groovy;
+
+	@Before
+	public void setUp() {
+		context = new Context(ScriptService.class, LanguageServerService.class);
+		groovy = context.service(ScriptService.class).getLanguageByName("Groovy");
 	}
 
-	@Override
-	public LanguageServer create(final String languageId,
-		final Environment environment)
-	{
-		return new GroovyLanguageServer(environment);
+	@After
+	public void tearDown() {
+		context.dispose();
 	}
 
-	@Override
-	public ScriptDialect dialect() {
-		return GroovyLanguageServer.DIALECT;
+	@Test
+	public void testScriptsAreServed() {
+		// Groovy scripts become plain Groovy, which scijava-code-lsp-groovy
+		// serves.
+		final GroovyDialect dialect = new GroovyDialect();
+		assertTrue(dialect.supports(groovy));
+		assertEquals("groovy", dialect.languageId());
+		assertTrue(context.service(LanguageServerService.class).supports(groovy));
+	}
+
+	@Test
+	public void testTypes() {
+		final GroovyDialect dialect = new GroovyDialect();
+		assertEquals("java.util.List", dialect.runtimeType(java.util.List.class));
+		assertEquals("Object", dialect.runtimeType(null));
+		assertEquals("java.util.List items", dialect.declare("items",
+			"java.util.List"));
+		assertTrue(dialect.blanks("#@ String name"));
 	}
 }
