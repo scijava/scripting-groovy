@@ -55,8 +55,9 @@ public class GroovyDialect implements ScriptDialect {
 	}
 
 	@Override
-	public String runtimeType(final Class<?> type) {
-		final String name = type == null ? null : type.getCanonicalName();
+	public String parameterType(final Class<?> type) {
+		// NB: Anonymous and local classes have no name to write.
+		final String name = type.getCanonicalName();
 		return name == null ? "Object" : name;
 	}
 

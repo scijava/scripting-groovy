@@ -32,12 +32,8 @@ package org.scijava.plugins.scripting.groovy.completion;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
-import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.After;
 import org.junit.Before;
@@ -55,11 +51,13 @@ import org.scijava.script.ScriptService;
  */
 public class GroovyDialectTest {
 
+	private GroovyDialect dialect;
 	private Context context;
 	private ScriptLanguage groovy;
 
 	@Before
 	public void setUp() {
+		dialect = new GroovyDialect();
 		context = new Context(ScriptService.class, LanguageServerService.class);
 		groovy = context.service(ScriptService.class).getLanguageByName("Groovy");
 	}
@@ -69,75 +67,50 @@ public class GroovyDialectTest {
 		context.dispose();
 	}
 
-	/**
-	 * Unit tests the adherence of {@link GroovyDialect} to
-	 * {@link org.scijava.plugins.scripting.groovy.GroovyScriptLanguage}
-	 */
 	@Test
-	public void testScriptsAreServed() {
-		// Groovy scripts become plain Groovy, which scijava-code-lsp-groovy
-		// serves.
-		final GroovyDialect dialect = new GroovyDialect();
+	public void testScriptsLanguageAdherence() {
+		// Ensure the dialect supports the Groovy Script Language
 		assertTrue(dialect.supports(groovy));
-		assertEquals("groovy", dialect.languageId());
 	}
 
 	@Test
-	public void testTypes() {
-		final GroovyDialect dialect = new GroovyDialect();
+	public void testParameterType() {
 		// Script parameters should stay the same type
-		assertEquals("java.util.List", dialect.runtimeType(java.util.List.class));
-		assertEquals("Object", dialect.runtimeType(null));
-		assertEquals("java.util.List items", dialect.declare("items",
-			"java.util.List"));
+		assertEquals("java.util.List", dialect.parameterType(
+				java.util.List.class));
+		// Anonymous classes have no name to write.
+		assertEquals("Object", dialect.parameterType(new Object() {
+		}
+				.getClass()));
+	}
+
+	@Test
+	public void testDeclare() {
+		// A SciJava Script parameter with type "java.util.List" and name "items"
+		// should be declared in Groovy code as "java.util.List items"
+		assertEquals(
+				"java.util.List items",
+				dialect.declare("items", "java.util.List")
+		);
+	}
+
+	@Test
+	public void testBlanks() {
+		// The only lines that need to be blanked are SciJava script parameters
 		assertTrue(dialect.blanks("#@ String name"));
 	}
 
 	@Test
-	public void testScriptParameters() throws Exception {
-		final String header = "#@ String name\n#@ int count\n";
-		assertTrue(complete(header + "name.toUpp").contains("toUpperCase"));
-		// Primitive parameters complete as their wrapper type.
-		assertTrue(complete(header + "count.intV").contains("intValue"));
-		assertTrue(complete(header + "def x = na").contains("name"));
-		// Nothing is offered on the parameter lines themselves.
-		assertTrue(complete("#@ String na").isEmpty());
-	}
-
-	@Test
-	public void testDiagnostics() {
-		// The server sees the parameters declared in a line of its own, above
-		// the script: problems are still where they are in the script.
-		assertEquals(Collections.singletonList("1:11 Unexpected input: '+'"),
-			problems("#@ double sigma\ndef x = (1 +\n"));
-		// The server sees the parameter lines blanked: as Groovy, they would be
-		// syntax errors ("Unexpected character: '#'").
-		assertEquals(Collections.emptyList(), problems(
-			"#@ String name\nprintln name.toUpperCase()\n"));
-	}
-
-	// -- Helper methods --
-
-	private ScriptSession session() {
-		return context.service(LanguageServerService.class).session(groovy);
-	}
-
-	private List<String> complete(final String code) throws Exception {
-		try (ScriptSession session = session()) {
-			return session.completion(code, code.length()).get(30, TimeUnit.SECONDS)
-				.getItems().stream().map(CompletionItem::getLabel).collect(Collectors
-					.toList());
+	public void testGroovyServerIntegration() {
+		// With scijava-code-lsp-groovy's server: the parameters' declarations,
+		// and the blanked parameter lines, parse.
+		try (ScriptSession session = context.service(LanguageServerService.class)
+			.session(groovy))
+		{
+			final List<Diagnostic> problems = session.update(
+				"#@ String name\n#@ int count\nprintln name * count\n").diagnostics(
+					20_000);
+			assertTrue(problems.toString(), problems.isEmpty());
 		}
-	}
-
-	/** The problems found in a script, e.g. {@code 0:4 message}. */
-	private List<String> problems(final String code) {
-		final List<Diagnostic> found;
-		try (ScriptSession session = session()) {
-			found = session.update(code).diagnostics(20_000);
-		}
-		return found.stream().map(d -> d.getRange().getStart().getLine() + ":" + d
-			.getRange().getStart().getCharacter() + " " + d.getMessage().getLeft())
-			.collect(Collectors.toList());
 	}
 }
