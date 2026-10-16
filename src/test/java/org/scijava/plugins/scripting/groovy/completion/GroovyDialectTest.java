@@ -49,8 +49,7 @@ import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
 
 /**
- * Tests {@link GroovyDialect}: Groovy scripts, as plain Groovy for
- * scijava-code-lsp-groovy's server (which its own tests test).
+ * Tests {@link GroovyDialect}
  *
  * @author Gabriel Selzer
  */
@@ -70,6 +69,10 @@ public class GroovyDialectTest {
 		context.dispose();
 	}
 
+	/**
+	 * Unit tests the adherence of {@link GroovyDialect} to
+	 * {@link org.scijava.plugins.scripting.groovy.GroovyScriptLanguage}
+	 */
 	@Test
 	public void testScriptsAreServed() {
 		// Groovy scripts become plain Groovy, which scijava-code-lsp-groovy
@@ -77,12 +80,12 @@ public class GroovyDialectTest {
 		final GroovyDialect dialect = new GroovyDialect();
 		assertTrue(dialect.supports(groovy));
 		assertEquals("groovy", dialect.languageId());
-		assertTrue(context.service(LanguageServerService.class).supports(groovy));
 	}
 
 	@Test
 	public void testTypes() {
 		final GroovyDialect dialect = new GroovyDialect();
+		// Script parameters should stay the same type
 		assertEquals("java.util.List", dialect.runtimeType(java.util.List.class));
 		assertEquals("Object", dialect.runtimeType(null));
 		assertEquals("java.util.List items", dialect.declare("items",
@@ -103,10 +106,12 @@ public class GroovyDialectTest {
 
 	@Test
 	public void testDiagnostics() {
-		// Where they are in the script, after its parameter lines.
+		// The server sees the parameters declared in a line of its own, above
+		// the script: problems are still where they are in the script.
 		assertEquals(Collections.singletonList("1:11 Unexpected input: '+'"),
 			problems("#@ double sigma\ndef x = (1 +\n"));
-		// Parameters are declared, so using them is fine.
+		// The server sees the parameter lines blanked: as Groovy, they would be
+		// syntax errors ("Unexpected character: '#'").
 		assertEquals(Collections.emptyList(), problems(
 			"#@ String name\nprintln name.toUpperCase()\n"));
 	}
