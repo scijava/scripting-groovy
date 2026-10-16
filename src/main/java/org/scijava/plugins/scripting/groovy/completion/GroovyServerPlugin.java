@@ -34,10 +34,7 @@ import org.scijava.Priority;
 import org.scijava.code.lsp.Environment;
 import org.scijava.code.lsp.LanguageServerPlugin;
 import org.scijava.code.lsp.ScriptDialect;
-import org.scijava.plugin.Plugin;
-import org.scijava.plugins.scripting.groovy.GroovyScriptLanguage;
-import org.scijava.script.ScriptLanguage;
-
+import org.scijava.plugin
 /**
  * Offers Groovy's in-process language server (see
  * {@link GroovyLanguageServer}), seeing scripts as plain Groovy (see
@@ -51,12 +48,8 @@ public class GroovyServerPlugin implements LanguageServerPlugin {
 
 	@Override
 	public boolean supports(final String languageId) {
+		// NB: Groovy scripts too, by their language's name.
 		return "groovy".equals(languageId);
-	}
-
-	@Override
-	public boolean supports(final ScriptLanguage language) {
-		return language instanceof GroovyScriptLanguage;
 	}
 
 	@Override
