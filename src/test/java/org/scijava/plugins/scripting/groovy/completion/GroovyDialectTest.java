@@ -96,8 +96,8 @@ public class GroovyDialectTest {
 	public void testGroovyServerIntegration() {
 		// With scijava-code-lsp-groovy's server: the parameters' declarations,
 		// and the blanked parameter lines, parse.
-		try (ScriptSession session = context.service(LanguageServerService.class)
-			.session(groovy))
+		try (ScriptSession session = new ScriptSession(context.service(
+			LanguageServerService.class), groovy))
 		{
 			final List<Diagnostic> problems = session.update(
 				"#@ String name\n#@ int count\nprintln name * count\n").diagnostics(
