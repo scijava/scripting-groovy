@@ -35,6 +35,8 @@ import static org.junit.Assert.assertTrue;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.After;
@@ -93,15 +95,17 @@ public class GroovyDialectTest {
 	}
 
 	@Test
-	public void testGroovyServerIntegration() {
+	public void testGroovyServerIntegration() throws Exception {
 		// With scijava-code-lsp-groovy's server: the parameters' declarations,
 		// and the blanked parameter lines, parse.
+		final CompletableFuture<List<Diagnostic>> heard =
+			new CompletableFuture<>();
 		try (ScriptSession session = new ScriptSession(context.service(
 			LanguageServerService.class), groovy))
 		{
-			final List<Diagnostic> problems = session.update(
-				"#@ String name\n#@ int count\nprintln name * count\n").diagnostics(
-					20_000);
+			session.setDiagnosticsListener(heard::complete);
+			session.update("#@ String name\n#@ int count\nprintln name * count\n");
+			final List<Diagnostic> problems = heard.get(20, TimeUnit.SECONDS);
 			assertTrue(problems.toString(), problems.isEmpty());
 		}
 	}
