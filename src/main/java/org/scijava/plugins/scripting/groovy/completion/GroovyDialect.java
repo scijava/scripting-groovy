@@ -30,10 +30,16 @@
 package org.scijava.plugins.scripting.groovy.completion;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
+import groovyjarjarantlr4.v4.runtime.Vocabulary;
+
+import org.apache.groovy.parser.antlr4.GroovyLexer;
 import org.scijava.code.lsp.ScriptDialect;
 import org.scijava.plugin.Plugin;
 import org.scijava.plugins.scripting.groovy.GroovyScriptLanguage;
@@ -48,6 +54,9 @@ import org.scijava.script.ScriptLanguage;
 @Plugin(type = ScriptDialect.class, name = "Groovy")
 public class GroovyDialect implements ScriptDialect {
 
+	/** Names Groovy reserves, which cannot be declared. */
+	private static final Set<String> KEYWORDS = keywords();
+
 	@Override
 	public boolean supports(final ScriptLanguage language) {
 		return language instanceof GroovyScriptLanguage;
@@ -59,12 +68,15 @@ public class GroovyDialect implements ScriptDialect {
 	}
 
 	@Override
-	public Header header(final Map<String, Class<?>> parameters) {
-		// Declare the types of each parameter for type reasoning; Groovy gets
+	public Header header(final Map<String, Variable> variables) {
+		// Declare the types of each variable for type reasoning; Groovy gets
 		// the very Java objects, named in full, so nothing needs importing
 		final List<String> declarations = new ArrayList<>();
-		parameters.forEach((name, type) -> declarations.add(parameterType(
-			type) + " " + name));
+		variables.forEach((name, v) -> {
+			// NB: Names Groovy reserves cannot be declared.
+			if (!KEYWORDS.contains(name)) declarations.add(parameterType(v
+				.type()) + " " + name);
+		});
 		// Combine into a Header
 		return new Header(String.join("; ", declarations), Collections
 			.emptySet());
@@ -80,5 +92,25 @@ public class GroovyDialect implements ScriptDialect {
 	static String parameterType(final Class<?> type) {
 		final String name = type.getCanonicalName();
 		return name == null ? "Object" : name;
+	}
+
+	/** Groovy's keywords */
+	private static Set<String> keywords() {
+		// NB: The lexer literals don't contain primitives - we add those ourselves
+		final Set<String> out = new TreeSet<>(Arrays.asList("true", "false",
+			"boolean", "byte", "char", "short", "int", "long", "float", "double"));
+		final Vocabulary v = GroovyLexer.VOCABULARY;
+		for (int i = 0; i <= v.getMaxTokenType(); i++) {
+			// NB: The vocabulary has every kind of token: keywords, operators and
+			// punctuation, which have fixed text (their literal name, quoted, e.g.
+			// "'class'"), plus identifiers, strings and numbers, which don't
+			// (null). We want just the literals that are words, i.e. keywords
+			// (with hyphens, as in "non-sealed").
+			final String literal = v.getLiteralName(i);
+			if (literal == null) continue;
+			final String word = literal.substring(1, literal.length() - 1);
+			if (word.matches("[a-z][a-z-]*")) out.add(word);
+		}
+		return out;
 	}
 }
