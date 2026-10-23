@@ -96,7 +96,7 @@
 
 		<gpars.version>1.2.1</gpars.version>
 
-		<!-- NB: scijava-code-lsp is built against this scijava-common. -->
+		<!-- TEMP: Remove once pom-scijava manages scijava-common 2.101.0. -->
 		<scijava-common.version>2.101.0</scijava-common.version>
 		<scijava-code-lsp.version>0.1.0-SNAPSHOT</scijava-code-lsp.version>
 		<scijava-code-lsp-groovy.version>0.1.0-SNAPSHOT</scijava-code-lsp-groovy.version>
