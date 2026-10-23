@@ -45,6 +45,7 @@ import org.junit.Test;
 import org.scijava.Context;
 import org.scijava.code.lsp.LanguageServerService;
 import org.scijava.code.lsp.ScriptDialect.Header;
+import org.scijava.code.lsp.ScriptDialect.Variable;
 import org.scijava.code.lsp.ScriptSession;
 import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
@@ -82,16 +83,27 @@ public class GroovyDialectTest {
 	public void testHeader() {
 		// SciJava Script parameters should be declared in Groovy code with
 		// their Java types, e.g. "java.util.List items"
-		final Map<String, Class<?>> parameters = new LinkedHashMap<>();
-		parameters.put("items", java.util.List.class);
-		parameters.put("count", int.class);
+		final Map<String, Variable> parameters = new LinkedHashMap<>();
+		parameters.put("items", Variable.ofType(java.util.List.class));
+		parameters.put("count", Variable.ofType(int.class));
 		// Anonymous classes have no name to write.
-		parameters.put("thing", new Object() {}.getClass());
+		parameters.put("thing", Variable.ofType(new Object() {}.getClass()));
 		final Header header = dialect.header(parameters);
 		assertEquals("java.util.List items; int count; Object thing", header
 			.code());
 		// Nothing is imported.
 		assertTrue(header.hiddenNames().isEmpty());
+	}
+
+	@Test
+	public void testKeywordsNotDeclared() {
+		// Names Groovy reserves (e.g. a live interpreter's binding named "in")
+		// cannot be declared.
+		final Map<String, Variable> variables = new LinkedHashMap<>();
+		variables.put("in", Variable.ofType(String.class));
+		variables.put("int", Variable.ofType(String.class));
+		variables.put("name", Variable.ofType(String.class));
+		assertEquals("java.lang.String name", dialect.header(variables).code());
 	}
 
 	@Test
