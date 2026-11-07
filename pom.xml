@@ -95,9 +95,6 @@
 		<license.excludes>**/script_templates/**</license.excludes>
 
 		<gpars.version>1.2.1</gpars.version>
-
-		<!-- NB: Deploy releases to the SciJava Maven repository. -->
-		<releaseProfiles>sign,deploy-to-scijava</releaseProfiles>
 	</properties>
 
 	<dependencies>
