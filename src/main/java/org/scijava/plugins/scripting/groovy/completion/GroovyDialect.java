@@ -63,7 +63,7 @@ public class GroovyDialect implements ScriptDialect {
 	}
 
 	@Override
-	public String languageId() {
+	public String outputLanguage() {
 		return "groovy";
 	}
 
