@@ -15,7 +15,7 @@ lines of script code based on SciJava events.
 ## Code completion
 
 The Script Editor completes code in Groovy scripts with
-`scijava-code-lsp-groovy`'s language server, driven by Groovy's own
+`scijava-lsp-groovy`'s language server, driven by Groovy's own
 compiler; this plugin shows it the scripts as plain Groovy (`GroovyDialect`),
 their `#@` parameters declared.
 

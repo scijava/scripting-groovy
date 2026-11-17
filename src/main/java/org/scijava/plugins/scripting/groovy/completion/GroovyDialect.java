@@ -40,14 +40,14 @@ import java.util.TreeSet;
 import groovyjarjarantlr4.v4.runtime.Vocabulary;
 
 import org.apache.groovy.parser.antlr4.GroovyLexer;
-import org.scijava.code.lsp.ScriptDialect;
+import org.scijava.lsp.ScriptDialect;
 import org.scijava.plugin.Plugin;
 import org.scijava.plugins.scripting.groovy.GroovyScriptLanguage;
 import org.scijava.script.ScriptLanguage;
 
 /**
  * Describes how to turn Groovy scripts into plain Groovy code, for
- * {@code groovy} language servers (e.g. scijava-code-lsp-groovy's).
+ * {@code groovy} language servers (e.g. scijava-lsp-groovy's).
  *
  * @author Gabriel Selzer
  */

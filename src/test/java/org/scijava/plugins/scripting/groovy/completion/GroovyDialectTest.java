@@ -43,10 +43,10 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.scijava.Context;
-import org.scijava.code.lsp.LanguageServerService;
-import org.scijava.code.lsp.ScriptDialect.Header;
-import org.scijava.code.lsp.ScriptDialect.Variable;
-import org.scijava.code.lsp.ScriptSession;
+import org.scijava.lsp.LanguageServerService;
+import org.scijava.lsp.ScriptDialect.Header;
+import org.scijava.lsp.ScriptDialect.Variable;
+import org.scijava.lsp.ScriptSession;
 import org.scijava.script.ScriptLanguage;
 import org.scijava.script.ScriptService;
 
@@ -108,7 +108,7 @@ public class GroovyDialectTest {
 
 	@Test
 	public void testGroovyServerIntegration() throws Exception {
-		// With scijava-code-lsp-groovy's server: the parameters' declarations,
+		// With scijava-lsp-groovy's server: the parameters' declarations,
 		// and the blanked parameter lines, parse.
 		final CompletableFuture<List<Diagnostic>> heard =
 			new CompletableFuture<>();
