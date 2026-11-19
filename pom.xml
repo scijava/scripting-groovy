@@ -85,7 +85,7 @@
 	</ciManagement>
 
 	<properties>
-		<scijava.jvm.version>8</scijava.jvm.version>
+		<scijava.jvm.version>11</scijava.jvm.version>
 
 		<package-name>org.scijava.plugins.scripting.groovy</package-name>
 		<main-class>org.scijava.plugins.scripting.groovy.Main</main-class>
