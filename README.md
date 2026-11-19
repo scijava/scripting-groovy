@@ -17,5 +17,12 @@ platform, see the
 [Scripting](https://github.com/scijava/scijava-common/wiki/Scripting) page on
 the SciJava Common wiki.
 
-See also:
+## Code completion
+
+The Script Editor completes code in Groovy scripts with
+`scijava-lsp-groovy`'s language server, driven by Groovy's own
+compiler; this plugin shows it the scripts as plain Groovy (`GroovyDialect`),
+their `#@` parameters declared.
+
+## See also:
 * [Groovy Scripting](https://imagej.net/scripting/groovy) on the ImageJ wiki.

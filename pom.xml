@@ -10,7 +10,7 @@
 	</parent>
 
 	<artifactId>scripting-groovy</artifactId>
-	<version>1.0.2-SNAPSHOT</version>
+	<version>2.0.0-SNAPSHOT</version>
 
 	<name>SciJava Scripting: Groovy</name>
 	<description>JSR-223-compliant Groovy scripting language plugin.</description>
@@ -85,7 +85,7 @@
 	</ciManagement>
 
 	<properties>
-		<scijava.jvm.version>8</scijava.jvm.version>
+		<scijava.jvm.version>11</scijava.jvm.version>
 
 		<package-name>org.scijava.plugins.scripting.groovy</package-name>
 		<main-class>org.scijava.plugins.scripting.groovy.Main</main-class>
@@ -95,6 +95,11 @@
 		<license.excludes>**/script_templates/**</license.excludes>
 
 		<gpars.version>1.2.1</gpars.version>
+
+		<!-- TEMP: Remove once managed by pom-scijava -->
+		<scijava-common.version>2.101.0</scijava-common.version>
+		<scijava-lsp.version>0.1.0</scijava-lsp.version>
+		<scijava-lsp-groovy.version>0.1.0</scijava-lsp-groovy.version>
 	</properties>
 
 	<dependencies>
@@ -102,6 +107,18 @@
 		<dependency>
 			<groupId>org.scijava</groupId>
 			<artifactId>scijava-common</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.scijava</groupId>
+			<artifactId>scijava-lsp</artifactId>
+			<version>${scijava-lsp.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.scijava</groupId>
+			<artifactId>scijava-lsp-groovy</artifactId>
+			<version>${scijava-lsp-groovy.version}</version>
+			<!-- NB: For integration tests; applications choose their servers. -->
+			<scope>test</scope>
 		</dependency>
 
 		<!-- Third-party dependencies -->
@@ -177,4 +194,46 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+
+	<build>
+		<plugins>
+			<!--
+			NB: Tests run on the classpath since we use scijava-common's tests JAR.
+			That JAR shares the org.scijava module name with scijava-common itself, so
+			it cannot be resolved on the module path.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<!--
+					NB: In module mode, javac does not discover annotation processors
+					on the module path, so the @Plugin indexer must be declared here.
+					-->
+					<annotationProcessorPaths>
+						<path>
+							<groupId>org.scijava</groupId>
+							<artifactId>scijava-common</artifactId>
+							<version>${scijava-common.version}</version>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
+				<executions>
+					<execution>
+						<id>default-testCompile</id>
+						<configuration>
+							<useModulePath>false</useModulePath>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<useModulePath>false</useModulePath>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
 </project>
