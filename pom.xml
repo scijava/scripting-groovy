@@ -96,7 +96,7 @@
 
 		<gpars.version>1.2.1</gpars.version>
 
-		<!-- TEMP: Remove once pom-scijava manages scijava-common 2.101.0. -->
+		<!-- TEMP: Remove once managed by pom-scijava -->
 		<scijava-common.version>2.101.0</scijava-common.version>
 		<scijava-lsp.version>0.1.0</scijava-lsp.version>
 		<scijava-lsp-groovy.version>0.1.0</scijava-lsp-groovy.version>
